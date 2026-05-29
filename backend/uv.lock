@@ -2456,7 +2456,7 @@ wheels = [
 ]
 
 [[package]]
-name = "swo-extension-playground"
+name = "mpt-usage-reporting-extension"
 version = "6.0.0"
 source = { editable = "." }
 dependencies = [

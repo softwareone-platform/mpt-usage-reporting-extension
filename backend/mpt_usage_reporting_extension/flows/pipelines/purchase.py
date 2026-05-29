@@ -2,7 +2,7 @@ from typing import override
 
 from mpt_extension_sdk.pipeline import BasePipeline, BaseStep
 
-from swo_playground.flows.steps.log_order import LogOrderStep
+from mpt_usage_reporting_extension.flows.steps.log_order import LogOrderStep
 
 
 class PurchasePipeline(BasePipeline):

@@ -1,12 +1,12 @@
-# SWO Extension Playground
+# MPT Usage Reporting Extension
 
-`swo-extension-playground` is a minimal SoftwareOne Marketplace extension built on top of `mpt-extension-sdk` and `mpt-tool`.
+`mpt-usage-reporting-extension` is a minimal SoftwareOne Marketplace extension built on top of `mpt-extension-sdk` and `mpt-tool`.
 
 It is primarily a playground repository: it shows the baseline extension shape, a simple validation API endpoint, an event listener, a small fulfillment pipeline, and the development workflow used by extension repositories in this ecosystem.
 
 ## Repository Layout
 
-- `backend/swo_playground/` contains the extension package.
+- `backend/mpt_usage_reporting_extension/` contains the extension package.
 - `backend/tests/` contains the pytest suite.
 - `make/*.mk` contains the repository make targets.
 - `compose.yaml` defines the local Docker-based development environment.

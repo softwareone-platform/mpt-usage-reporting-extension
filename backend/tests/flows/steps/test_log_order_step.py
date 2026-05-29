@@ -2,7 +2,7 @@ from logging import Logger
 
 from mpt_extension_sdk.pipeline import OrderContext
 
-from swo_playground.flows.steps.log_order import LogOrderStep
+from mpt_usage_reporting_extension.flows.steps.log_order import LogOrderStep
 
 
 async def test_log_order_step(mocker):
