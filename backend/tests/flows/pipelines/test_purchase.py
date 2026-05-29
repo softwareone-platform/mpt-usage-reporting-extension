@@ -1,5 +1,5 @@
-from swo_playground.flows.pipelines.purchase import PurchasePipeline
-from swo_playground.flows.steps.log_order import LogOrderStep
+from mpt_usage_reporting_extension.flows.pipelines.purchase import PurchasePipeline
+from mpt_usage_reporting_extension.flows.steps.log_order import LogOrderStep
 
 
 def test_purchase():

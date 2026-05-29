@@ -1,7 +1,7 @@
 from mpt_api_client.resources.commerce.agreements import Agreement
 from mpt_extension_sdk.api.context import APIContext
 
-from swo_playground.routers.api.agreements import get_agreement, sync_agreement
+from mpt_usage_reporting_extension.routers.api.agreements import get_agreement, sync_agreement
 
 
 async def test_get_reads_marketplace(mocker, agreement_payload):
