@@ -8,7 +8,11 @@ license = { text = "Apache-2.0 license" }
 dependencies = [
     "mpt-extension-sdk==6.3.*",
     "mpt-tool==6.0.*",
+    "typer>=0.25.0",
 ]
+
+[project.scripts]
+mpt-billing-subscription-usage = "mpt_usage_reporting_extension.cli:main"
 
 [tool.uv]
 override-dependencies = ["typer>=0.25.0", "mpt-api-client>=6.1.0"]

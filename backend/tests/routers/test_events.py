@@ -11,7 +11,9 @@ def test_purchase_executes_pipeline(mocker):
     order = mocker.Mock(id="ORD-1", spec=Order)
     event = mocker.Mock(spec=Event, id="EVT-1", object=order)
     context = mocker.Mock(spec=OrderContext)
-    pipeline = mocker.patch("mpt_usage_reporting_extension.routers.events.order.PurchasePipeline", autospec=True)
+    pipeline = mocker.patch(
+        "mpt_usage_reporting_extension.routers.events.order.PurchasePipeline", autospec=True
+    )
 
     asyncio.run(process_order_purchase(event, context))  # act
 
