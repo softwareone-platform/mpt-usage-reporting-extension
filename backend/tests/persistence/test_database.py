@@ -22,7 +22,7 @@ def test_resolve_db_path_env_override(monkeypatch, tmp_path):
     assert path == target
 
 
-def test_create_schema_creates_both_tables(connection):
+def test_connect_exposes_both_tables(connection):
     rows = connection.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'",
     ).fetchall()  # act
