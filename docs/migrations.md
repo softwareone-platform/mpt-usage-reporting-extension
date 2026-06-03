@@ -9,24 +9,6 @@ Shared migration knowledge lives in:
 
 If the repository does not yet have repository-specific migration rules, keep this file short and rely on the shared migration knowledge above.
 
-## Repository-Specific Details
-
-### Persistent SQLite store
-
-Schema migrations in this repository create and evolve a local SQLite database used
-by the accumulation stage.
-
-- The database file defaults to `storage.db` in the backend root. Override the
-  location with the `USAGE_REPORTING_DB_PATH` environment variable.
-- The file and the migration state file (`.migrations-state.json`) are gitignored;
-  they are recreated by running `make migrate-schema`.
-- Connection, schema creation, and decimal handling live in
-  `mpt_usage_reporting_extension.persistence.database`. Monetary columns are stored
-  as `DECIMAL` (TEXT) and round-tripped through `decimal.Decimal` so precision is
-  preserved with no float drift.
-- `20260603155923_create_accumulation_tables.py` creates
-  `subscription_monthly_accumulation` and `agreement_monthly_accumulation`.
-
 ## What To Add Here
 
 Add repository-specific migration details only when they exist, for example:
