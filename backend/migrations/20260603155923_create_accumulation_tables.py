@@ -1,6 +1,5 @@
 """Create the monthly accumulation tables."""
 
-import os
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -8,8 +7,7 @@ from typing import override
 
 from mpt_tool.migration import SchemaBaseMigration
 
-_DB_ENV_VAR = "USAGE_REPORTING_DB_PATH"
-_DEFAULT_DB_PATH = Path(__file__).parents[1] / "storage.db"
+_DB_PATH = Path(__file__).parents[1] / "storage.db"
 
 _CREATE_SUBSCRIPTION_TABLE = """
 CREATE TABLE IF NOT EXISTS subscription_monthly_accumulation (
@@ -44,9 +42,7 @@ class Migration(SchemaBaseMigration):
     def run(self) -> None:
         """Open the SQLite database and create both accumulation tables."""
         self.log.info("Creating monthly accumulation tables")
-        override_path = os.environ.get(_DB_ENV_VAR)
-        db_path = Path(override_path) if override_path else _DEFAULT_DB_PATH
-        with closing(sqlite3.connect(db_path)) as connection:
+        with closing(sqlite3.connect(_DB_PATH)) as connection:
             connection.execute(_CREATE_SUBSCRIPTION_TABLE)
             connection.execute(_CREATE_AGREEMENT_TABLE)
             connection.commit()
