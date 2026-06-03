@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS subscription_monthly_accumulation (
     ppx1 DECIMAL NOT NULL DEFAULT '0',
     spx1 DECIMAL NOT NULL DEFAULT '0',
     updated_at TEXT NOT NULL,
-    PRIMARY KEY (subscription_id, agreement_id, year, month)
+    PRIMARY KEY (subscription_id, year, month, agreement_id)
 )
 """
 
