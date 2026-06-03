@@ -44,6 +44,12 @@ make/local.mk
 # mpt-tool
 .migrations-state.json
 
+# SQLite storage
+backend/storage.db
+*.db
+*.db-wal
+*.db-journal
+
 # Generated extension UI assets
 static/*
 !static/.gitkeep
