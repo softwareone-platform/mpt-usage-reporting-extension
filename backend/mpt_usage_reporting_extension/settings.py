@@ -20,4 +20,6 @@ class ExtensionSettings(BaseExtensionSettings):
     @override
     @classmethod
     def load(cls) -> Self:
-        return cls(product_ids=tuple(cls.list_env("MPT_PRODUCTS_IDS")))
+        return cls(
+            product_ids=tuple(cls.list_env("MPT_PRODUCTS_IDS")),
+        )
