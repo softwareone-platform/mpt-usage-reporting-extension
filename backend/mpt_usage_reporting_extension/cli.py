@@ -1,6 +1,16 @@
 """Command line interface for the MPT usage reporting extension."""
 
+import datetime as dt
+import logging
+from typing import Annotated
+
 import typer
+
+from mpt_usage_reporting_extension.context import RunContext
+from mpt_usage_reporting_extension.mpt_client import build_client
+from mpt_usage_reporting_extension.settings import ExtensionSettings
+from mpt_usage_reporting_extension.statements import StatementReport, StatementSelector
+from mpt_usage_reporting_extension.window import resolve_window
 
 app = typer.Typer(
     help="Report MPT billing subscription usage.",
@@ -24,6 +34,40 @@ def billing_subscription_usage() -> None:
     """Report billing subscription usage for an account."""
     typer.secho(NOT_IMPLEMENTED_ART, fg=typer.colors.YELLOW)
     typer.secho("Not implemented", fg=typer.colors.YELLOW)
+
+
+@app.command()
+def run(
+    date: Annotated[
+        dt.datetime | None,
+        typer.Option("--date", formats=["%Y-%m-%d"], help="Run for a single UTC day (YYYY-MM-DD)."),
+    ] = None,
+    from_date: Annotated[
+        dt.datetime | None,
+        typer.Option("--from-date", formats=["%Y-%m-%d"], help="Window start day, UTC inclusive."),
+    ] = None,
+    till_date: Annotated[
+        dt.datetime | None,
+        typer.Option("--till-date", formats=["%Y-%m-%d"], help="Window end day, UTC inclusive."),
+    ] = None,
+) -> None:
+    """Select MPT billing statements for the run window (issued/cancelled two-pass)."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    window = resolve_window(_to_date(date), _to_date(from_date), _to_date(till_date))
+    settings = ExtensionSettings.load()
+    ctx = RunContext(
+        api_client=build_client(),
+        window=window,
+        product_ids=settings.product_ids,
+    )
+    StatementSelector().select(ctx)
+    StatementReport(ctx).render()
+
+
+def _to_date(parsed: dt.datetime | None) -> dt.date | None:
+    if parsed is None:
+        return None
+    return parsed.date()
 
 
 def main() -> None:
