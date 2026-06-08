@@ -6,6 +6,11 @@ from typing import Annotated
 
 import typer
 
+from mpt_usage_reporting_extension.charges import (
+    ChargeAccumulator,
+    ChargeReport,
+    ChargeStreamer,
+)
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.mpt_client import build_client
 from mpt_usage_reporting_extension.settings import ExtensionSettings
@@ -62,6 +67,9 @@ def run(
     )
     StatementSelector().select(ctx)
     StatementReport(ctx).render()
+    charges = ChargeStreamer().stream(ctx)
+    totals = ChargeAccumulator().accumulate(charges)
+    ChargeReport(totals).render()
 
 
 def _to_date(parsed: dt.datetime | None) -> dt.date | None:
