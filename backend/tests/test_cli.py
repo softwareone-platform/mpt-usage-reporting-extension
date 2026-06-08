@@ -23,6 +23,7 @@ def test_cli_reports_not_implemented():
 def test_run_reports_selected_statements(mocker):
     mocker.patch.object(cli, "build_client")
     mocker.patch.object(cli.ExtensionSettings, "load")
+    mocker.patch.object(cli, "SqliteDatabase")
     statements = [
         Statement({
             "id": "BILL-1",
@@ -35,7 +36,7 @@ def test_run_reports_selected_statements(mocker):
     selector = mocker.patch.object(cli, "StatementSelector").return_value
     selector.select.side_effect = lambda ctx: ctx.statements.extend(statements)
 
-    result = runner.invoke(cli.app, ["run", "--date", "2026-06-01"])  # act
+    result = runner.invoke(cli.app, ["run", "--date", "2026-06-01"])
 
     assert result.exit_code == 0
     assert "Selected 2 statement(s)" in result.stdout
@@ -47,9 +48,10 @@ def test_run_reports_selected_statements(mocker):
 def test_run_reports_when_no_statements(mocker):
     mocker.patch.object(cli, "build_client")
     mocker.patch.object(cli.ExtensionSettings, "load")
+    mocker.patch.object(cli, "SqliteDatabase")
     mocker.patch.object(cli, "StatementSelector")
 
-    result = runner.invoke(cli.app, ["run", "--date", "2026-06-01"])  # act
+    result = runner.invoke(cli.app, ["run", "--date", "2026-06-01"])
 
     assert result.exit_code == 0
     assert "Selected 0 statement(s)" in result.stdout

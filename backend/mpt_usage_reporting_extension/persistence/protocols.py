@@ -1,5 +1,3 @@
-"""Protocols for the hot-swappable accumulation persistence layer."""
-
 from typing import Protocol
 
 from mpt_usage_reporting_extension.persistence.models import (
@@ -7,6 +5,7 @@ from mpt_usage_reporting_extension.persistence.models import (
     Charge,
     SubscriptionMonthlyAccumulation,
 )
+from mpt_usage_reporting_extension.types import Month, Year
 
 
 class SubscriptionAccumulationRepository(Protocol):
@@ -21,8 +20,8 @@ class SubscriptionAccumulationRepository(Protocol):
         *,
         subscription_id: str,
         agreement_id: str,
-        year: int,
-        month: int,
+        year: Year,
+        month: Month,
     ) -> SubscriptionMonthlyAccumulation | None:
         """Return the stored subscription bucket, or None when absent."""
         ...
@@ -39,8 +38,8 @@ class AgreementAccumulationRepository(Protocol):
         self,
         *,
         agreement_id: str,
-        year: int,
-        month: int,
+        year: Year,
+        month: Month,
     ) -> AgreementMonthlyAccumulation | None:
         """Return the stored agreement bucket, or None when absent."""
         ...

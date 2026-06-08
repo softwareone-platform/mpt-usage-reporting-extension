@@ -1,10 +1,9 @@
-"""Run context shared across the usage reporting ``run`` command."""
-
 from dataclasses import dataclass, field
 
 from mpt_api_client import MPTClient
 from mpt_api_client.resources.billing.statements import Statement
 
+from mpt_usage_reporting_extension.accumulation import ChargeTotals
 from mpt_usage_reporting_extension.window import RunWindow
 
 
@@ -12,8 +11,9 @@ from mpt_usage_reporting_extension.window import RunWindow
 class RunContext:
     """Mutable context for a statement-selection run.
 
-    Carries the API client and run inputs and accumulates the selected statements so
-    downstream reporting reads everything from a single object.
+    Carries the API client and run inputs, accumulates the selected statements, and
+    holds the accumulated charge totals so downstream persistence and reporting read
+    everything from a single object.
     """
 
     api_client: MPTClient
@@ -21,3 +21,4 @@ class RunContext:
     product_ids: tuple[str, ...]
     seller_id: str = ""
     statements: list[Statement] = field(default_factory=list)
+    charge_totals: ChargeTotals | None = None

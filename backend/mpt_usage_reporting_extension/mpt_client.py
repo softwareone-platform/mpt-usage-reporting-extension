@@ -1,5 +1,3 @@
-"""MPT API client factory for the usage reporting CLI."""
-
 import os
 
 from mpt_api_client import MPTClient

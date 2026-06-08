@@ -49,11 +49,11 @@ def _charge(ppx1: Decimal, spx1: Decimal, **overrides: object) -> Charge:
 def test_accumulate_inserts_new_row(subscription_repo):
     subscription_repo.accumulate(_charge(_PPX1, _SPX1))
 
-    stored = subscription_repo.get(**_SUB_KEY)  # act
+    result = subscription_repo.get(**_SUB_KEY)
 
-    assert stored.subscription_id == _SUBSCRIPTION_ID
-    assert stored.ppx1 == _PPX1
-    assert stored.spx1 == _SPX1
+    assert result.subscription_id == _SUBSCRIPTION_ID
+    assert result.ppx1 == _PPX1
+    assert result.spx1 == _SPX1
 
 
 def test_accumulate_is_additive_without_drift(subscription_repo):
@@ -62,35 +62,35 @@ def test_accumulate_is_additive_without_drift(subscription_repo):
     subscription_repo.accumulate(_charge(Decimal("0.1"), Decimal("0.7")))
     subscription_repo.accumulate(_charge(Decimal("0.2"), Decimal("0.1")))
 
-    stored = subscription_repo.get(**_SUB_KEY)  # act
+    result = subscription_repo.get(**_SUB_KEY)
 
-    assert stored.ppx1 == Decimal("0.3")
-    assert stored.spx1 == Decimal("0.8")
+    assert result.ppx1 == Decimal("0.3")
+    assert result.spx1 == Decimal("0.8")
 
 
 def test_columns_accumulate_independently(agreement_repo):
     agreement_repo.accumulate(_charge(_FIRST, _SECOND))
     agreement_repo.accumulate(_charge(_SECOND, _SECOND))
 
-    stored = agreement_repo.get(**_AGR_KEY)  # act
+    result = agreement_repo.get(**_AGR_KEY)
 
-    assert stored.ppx1 == _TOTAL
-    assert stored.spx1 == Decimal("0.4")
+    assert result.ppx1 == _TOTAL
+    assert result.spx1 == Decimal("0.4")
 
 
 def test_get_returns_none_when_absent(subscription_repo):
-    stored = subscription_repo.get(**_SUB_KEY)  # act
+    result = subscription_repo.get(**_SUB_KEY)
 
-    assert stored is None
+    assert result is None
 
 
 def test_updated_at_set_on_insert(agreement_repo):
     agreement_repo.accumulate(_charge(_FIRST, _FIRST))
 
-    stored = agreement_repo.get(**_AGR_KEY)  # act
+    result = agreement_repo.get(**_AGR_KEY)
 
-    assert isinstance(stored.updated_at, dt.datetime)
-    assert stored.updated_at.tzinfo is not None
+    assert isinstance(result.updated_at, dt.datetime)
+    assert result.updated_at.tzinfo is not None
 
 
 def test_updated_at_refreshed_on_second_write(agreement_repo, mocker):
@@ -100,9 +100,9 @@ def test_updated_at_refreshed_on_second_write(agreement_repo, mocker):
     agreement_repo.accumulate(_charge(_FIRST, _FIRST))
     agreement_repo.accumulate(_charge(_FIRST, _FIRST))
 
-    stored = agreement_repo.get(**_AGR_KEY)  # act
+    result = agreement_repo.get(**_AGR_KEY)
 
-    assert stored.updated_at == dt.datetime.fromisoformat(second)
+    assert result.updated_at == dt.datetime.fromisoformat(second)
 
 
 def test_subscription_key_distinguishes_agreement(subscription_repo):
@@ -113,14 +113,14 @@ def test_subscription_key_distinguishes_agreement(subscription_repo):
         _charge(_SECOND, _ZERO, subscription_id="SUB-1", agreement_id="AGR-2")
     )
 
-    stored_a = subscription_repo.get(
+    result = subscription_repo.get(
         subscription_id="SUB-1",
         agreement_id="AGR-1",
         year=_YEAR,
         month=_MONTH,
-    )  # act
+    )
 
-    assert stored_a.ppx1 == _FIRST
+    assert result.ppx1 == _FIRST
     assert (
         subscription_repo.get(
             subscription_id="SUB-1",
@@ -136,9 +136,9 @@ def test_agreement_key_distinguishes_month(agreement_repo):
     agreement_repo.accumulate(_charge(_FIRST, _ZERO, agreement_id="AGR-1", month=_MONTH))
     agreement_repo.accumulate(_charge(_SECOND, _ZERO, agreement_id="AGR-1", month=_OTHER_MONTH))
 
-    stored_first = agreement_repo.get(agreement_id="AGR-1", year=_YEAR, month=_MONTH)  # act
+    result = agreement_repo.get(agreement_id="AGR-1", year=_YEAR, month=_MONTH)
 
-    assert stored_first.ppx1 == _FIRST
+    assert result.ppx1 == _FIRST
     assert agreement_repo.get(agreement_id="AGR-1", year=_YEAR, month=_OTHER_MONTH).ppx1 == _SECOND
 
 
@@ -159,14 +159,14 @@ def test_invalid_year_is_rejected(agreement_repo):
 def test_tables_are_independent(subscription_repo, agreement_repo):
     subscription_repo.accumulate(_charge(_FIRST, _FIRST))
 
-    stored = agreement_repo.get(**_AGR_KEY)  # act
+    result = agreement_repo.get(**_AGR_KEY)
 
-    assert stored is None
+    assert result is None
 
 
 def test_utc_now_iso_is_z_suffixed_utc():
-    stamp = repositories.utc_now_iso()  # act
+    result = repositories.utc_now_iso()
 
-    assert stamp.endswith("Z")
-    parsed = dt.datetime.fromisoformat(stamp)
+    assert result.endswith("Z")
+    parsed = dt.datetime.fromisoformat(result)
     assert parsed.utcoffset() == dt.timedelta(0)

@@ -1,5 +1,3 @@
-"""Billing statement selection for the usage reporting ``run`` command."""
-
 import datetime as dt
 import logging
 from collections.abc import Iterable
@@ -54,6 +52,7 @@ _SELECT_FIELDS = (
     _ID,
     _STATUS,
     _AUDIT_CREATED_AT,
+    _AUDIT_ISSUED_AT,
     _AUDIT_CANCELLED_AT,
     _AGREEMENT_ID,
     _PRODUCT_ID,

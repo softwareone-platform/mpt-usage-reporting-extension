@@ -1,11 +1,10 @@
-"""Command line interface for the MPT usage reporting extension."""
-
 import datetime as dt
 import logging
 from typing import Annotated
 
 import typer
 
+from mpt_usage_reporting_extension.charge_persistence import ChargePersister
 from mpt_usage_reporting_extension.charges import (
     ChargeAccumulator,
     ChargeReport,
@@ -13,6 +12,10 @@ from mpt_usage_reporting_extension.charges import (
 )
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.mpt_client import build_client
+from mpt_usage_reporting_extension.persistence.sqlite.database import (
+    SqliteDatabase,
+    resolve_db_path,
+)
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 from mpt_usage_reporting_extension.statements import StatementReport, StatementSelector
 from mpt_usage_reporting_extension.window import resolve_window
@@ -67,9 +70,10 @@ def run(
     )
     StatementSelector().select(ctx)
     StatementReport(ctx).render()
-    charges = ChargeStreamer().stream(ctx)
-    totals = ChargeAccumulator().accumulate(charges)
-    ChargeReport(totals).render()
+    ctx.charge_totals = ChargeAccumulator().accumulate(ChargeStreamer().stream(ctx))
+    with SqliteDatabase(resolve_db_path()) as db:
+        ChargePersister().persist(ctx, db.subscription_repository(), db.agreement_repository())
+    ChargeReport(ctx.charge_totals).render()
 
 
 def _to_date(parsed: dt.datetime | None) -> dt.date | None:
