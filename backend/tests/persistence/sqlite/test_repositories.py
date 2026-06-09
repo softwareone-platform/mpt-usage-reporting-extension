@@ -8,159 +8,259 @@ import pytest
 from mpt_usage_reporting_extension.persistence.models import Charge
 from mpt_usage_reporting_extension.persistence.sqlite import repositories
 
-_MONTH = 5
-_OTHER_MONTH = 6
-_BAD_MONTH = 13
-_BAD2026 = 99
 
-_SUBSCRIPTION_ID = "SUB-1234-5678"
-_AGREEMENT_ID = "AGR-1234-5678"
-
-_SUB_KEY = MappingProxyType({
-    "subscription_id": _SUBSCRIPTION_ID,
-    "agreement_id": _AGREEMENT_ID,
-    "year": 2026,
-    "month": _MONTH,
-})
-_AGR_KEY = MappingProxyType({"agreement_id": _AGREEMENT_ID, "year": 2026, "month": _MONTH})
-
-_ZERO = Decimal(0)
-_PPX1 = Decimal("1543.13")
-_SPX1 = Decimal("1697.45")
-_FIRST = Decimal("0.1")
-_SECOND = Decimal("0.2")
-_TOTAL = Decimal("0.3")
+@pytest.fixture
+def year():
+    return 2026
 
 
-def charge_factory(ppx1: Decimal, spx1: Decimal, **overrides: object) -> Charge:
-    fields: dict[str, object] = {
-        "subscription_id": _SUBSCRIPTION_ID,
-        "agreement_id": _AGREEMENT_ID,
-        "year": 2026,
-        "month": _MONTH,
-        "ppx1": ppx1,
-        "spx1": spx1,
-    }
-    fields.update(overrides)
-    return Charge(**fields)  # type: ignore[arg-type]
+@pytest.fixture
+def prev_year():
+    return 2025
 
 
-def test_accumulate_inserts_new_row(subscription_repo):
-    subscription_repo.accumulate(charge_factory(_PPX1, _SPX1))
-
-    result = subscription_repo.get(**_SUB_KEY)
-
-    assert result.subscription_id == _SUBSCRIPTION_ID
-    assert result.ppx1 == _PPX1
-    assert result.spx1 == _SPX1
+@pytest.fixture
+def month():
+    return 5
 
 
-def test_accumulate_is_additive_without_drift(subscription_repo):
+@pytest.fixture
+def other_month():
+    return 6
+
+
+@pytest.fixture
+def last_month():
+    return 12
+
+
+@pytest.fixture
+def first_month():
+    return 1
+
+
+@pytest.fixture
+def bad_month():
+    return 13
+
+
+@pytest.fixture
+def bad_year():
+    return 99
+
+
+@pytest.fixture
+def subscription_id():
+    return "SUB-1234-5678"
+
+
+@pytest.fixture
+def agreement_id():
+    return "AGR-1234-5678"
+
+
+@pytest.fixture
+def decimal_zero():
+    return Decimal(0)
+
+
+@pytest.fixture
+def decimal_ppx1():
+    return Decimal("1543.13")
+
+
+@pytest.fixture
+def decimal_spx1():
+    return Decimal("1697.45")
+
+
+@pytest.fixture
+def decimal_first():
+    return Decimal("0.1")
+
+
+@pytest.fixture
+def decimal_second():
+    return Decimal("0.2")
+
+
+@pytest.fixture
+def decimal_total():
+    return Decimal("0.3")
+
+
+@pytest.fixture
+def sub_key(subscription_id, agreement_id, year, month):
+    return MappingProxyType({
+        "subscription_id": subscription_id,
+        "agreement_id": agreement_id,
+        "year": year,
+        "month": month,
+    })
+
+
+@pytest.fixture
+def agr_key(agreement_id, year, month):
+    return MappingProxyType({"agreement_id": agreement_id, "year": year, "month": month})
+
+
+@pytest.fixture
+def charge_factory(subscription_id, agreement_id, year, month):
+    def factory(ppx1, spx1, **overrides):
+        fields: dict[str, object] = {
+            "subscription_id": subscription_id,
+            "agreement_id": agreement_id,
+            "year": year,
+            "month": month,
+            "ppx1": ppx1,
+            "spx1": spx1,
+        }
+        fields.update(overrides)
+        return Charge(**fields)  # type: ignore[arg-type]
+
+    return factory
+
+
+def test_accumulate_inserts_new_row(
+    subscription_repo, charge_factory, decimal_ppx1, decimal_spx1, sub_key
+):
+    subscription_repo.accumulate(charge_factory(decimal_ppx1, decimal_spx1))
+
+    result = subscription_repo.get(**sub_key)
+
+    assert result.subscription_id == sub_key["subscription_id"]
+    assert result.ppx1 == decimal_ppx1
+    assert result.spx1 == decimal_spx1
+
+
+def test_accumulate_is_additive_without_drift(subscription_repo, charge_factory, sub_key):
     # Sums that float gets wrong: 0.1 + 0.2 == 0.30000000000000004 and
     # 0.7 + 0.1 == 0.7999999999999999 in float; decimal_add keeps them exact.
     subscription_repo.accumulate(charge_factory(Decimal("0.1"), Decimal("0.7")))
     subscription_repo.accumulate(charge_factory(Decimal("0.2"), Decimal("0.1")))
 
-    result = subscription_repo.get(**_SUB_KEY)
+    result = subscription_repo.get(**sub_key)
 
     assert result.ppx1 == Decimal("0.3")
     assert result.spx1 == Decimal("0.8")
 
 
-def test_columns_accumulate_independently(agreement_repo):
-    agreement_repo.accumulate(charge_factory(_FIRST, _SECOND))
-    agreement_repo.accumulate(charge_factory(_SECOND, _SECOND))
+def test_columns_accumulate_independently(
+    agreement_repo, charge_factory, decimal_first, decimal_second, agr_key, decimal_total
+):
+    agreement_repo.accumulate(charge_factory(decimal_first, decimal_second))
+    agreement_repo.accumulate(charge_factory(decimal_second, decimal_second))
 
-    result = agreement_repo.get(**_AGR_KEY)
+    result = agreement_repo.get(**agr_key)
 
-    assert result.ppx1 == _TOTAL
+    assert result.ppx1 == decimal_total
     assert result.spx1 == Decimal("0.4")
 
 
-def test_get_returns_none_when_absent(subscription_repo):
-    result = subscription_repo.get(**_SUB_KEY)
+def test_get_returns_none_when_absent(subscription_repo, sub_key):
+    result = subscription_repo.get(**sub_key)
 
     assert result is None
 
 
-def test_updated_at_set_on_insert(agreement_repo):
-    agreement_repo.accumulate(charge_factory(_FIRST, _FIRST))
+def test_updated_at_set_on_insert(agreement_repo, charge_factory, decimal_first, agr_key):
+    agreement_repo.accumulate(charge_factory(decimal_first, decimal_first))
 
-    result = agreement_repo.get(**_AGR_KEY)
+    result = agreement_repo.get(**agr_key)
 
     assert isinstance(result.updated_at, dt.datetime)
     assert result.updated_at.tzinfo is not None
 
 
-def test_updated_at_refreshed_on_second_write(agreement_repo, mocker):
-    first = "2026-05-07T08:05:00Z"
-    second = "2026-05-08T09:06:00Z"
-    mocker.patch.object(repositories, "utc_now_iso", side_effect=[first, second])
-    agreement_repo.accumulate(charge_factory(_FIRST, _FIRST))
-    agreement_repo.accumulate(charge_factory(_FIRST, _FIRST))
+def test_updated_at_refreshed_on_second_write(
+    agreement_repo, mocker, charge_factory, decimal_first, agr_key
+):
+    first_write = "2026-05-07T08:05:00Z"
+    second_write = "2026-05-08T09:06:00Z"
+    mocker.patch.object(repositories, "utc_now_iso", side_effect=[first_write, second_write])
+    agreement_repo.accumulate(charge_factory(decimal_first, decimal_first))
+    agreement_repo.accumulate(charge_factory(decimal_first, decimal_first))
 
-    result = agreement_repo.get(**_AGR_KEY)
+    result = agreement_repo.get(**agr_key)
 
-    assert result.updated_at == dt.datetime.fromisoformat(second)
+    assert result.updated_at == dt.datetime.fromisoformat(second_write)
 
 
-def test_subscription_key_distinguishes_agreement(subscription_repo):
+def test_subscription_key_distinguishes_agreement(
+    subscription_repo, charge_factory, decimal_first, decimal_second, decimal_zero, year, month
+):
     subscription_repo.accumulate(
-        charge_factory(_FIRST, _ZERO, subscription_id="SUB-1", agreement_id="AGR-1")
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", agreement_id="AGR-1")
     )
     subscription_repo.accumulate(
-        charge_factory(_SECOND, _ZERO, subscription_id="SUB-1", agreement_id="AGR-2")
+        charge_factory(decimal_second, decimal_zero, subscription_id="SUB-1", agreement_id="AGR-2")
     )
 
     result = subscription_repo.get(
         subscription_id="SUB-1",
         agreement_id="AGR-1",
-        year=2026,
-        month=_MONTH,
+        year=year,
+        month=month,
     )
 
-    assert result.ppx1 == _FIRST
+    assert result.ppx1 == decimal_first
     assert (
         subscription_repo.get(
             subscription_id="SUB-1",
             agreement_id="AGR-2",
-            year=2026,
-            month=_MONTH,
+            year=year,
+            month=month,
         ).ppx1
-        == _SECOND
+        == decimal_second
     )
 
 
-def test_agreement_key_distinguishes_month(agreement_repo):
-    agreement_repo.accumulate(charge_factory(_FIRST, _ZERO, agreement_id="AGR-1", month=_MONTH))
+def test_agreement_key_distinguishes_month(
+    agreement_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    year,
+    month,
+    other_month,
+):
     agreement_repo.accumulate(
-        charge_factory(_SECOND, _ZERO, agreement_id="AGR-1", month=_OTHER_MONTH)
+        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1", month=month)
+    )
+    agreement_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, agreement_id="AGR-1", month=other_month)
     )
 
-    result = agreement_repo.get(agreement_id="AGR-1", year=2026, month=_MONTH)
+    result = agreement_repo.get(agreement_id="AGR-1", year=year, month=month)
 
-    assert result.ppx1 == _FIRST
-    assert agreement_repo.get(agreement_id="AGR-1", year=2026, month=_OTHER_MONTH).ppx1 == _SECOND
+    assert result.ppx1 == decimal_first
+    assert (
+        agreement_repo.get(agreement_id="AGR-1", year=year, month=other_month).ppx1
+        == decimal_second
+    )
 
 
-def test_invalid_month_is_rejected(agreement_repo):
+def test_invalid_month_is_rejected(agreement_repo, charge_factory, decimal_first, bad_month):
     with pytest.raises(sqlite3.IntegrityError):
         agreement_repo.accumulate(
-            charge_factory(_FIRST, _FIRST, agreement_id="AGR-1", month=_BAD_MONTH)
+            charge_factory(decimal_first, decimal_first, agreement_id="AGR-1", month=bad_month)
         )  # act
 
 
-def test_invalid_year_is_rejected(agreement_repo):
+def test_invalid_year_is_rejected(agreement_repo, charge_factory, decimal_first, bad_year):
     with pytest.raises(sqlite3.IntegrityError):
         agreement_repo.accumulate(
-            charge_factory(_FIRST, _FIRST, agreement_id="AGR-1", year=_BAD2026)
+            charge_factory(decimal_first, decimal_first, agreement_id="AGR-1", year=bad_year)
         )  # act
 
 
-def test_tables_are_independent(subscription_repo, agreement_repo):
-    subscription_repo.accumulate(charge_factory(_FIRST, _FIRST))
+def test_tables_are_independent(
+    subscription_repo, agreement_repo, charge_factory, decimal_first, agr_key
+):
+    subscription_repo.accumulate(charge_factory(decimal_first, decimal_first))
 
-    result = agreement_repo.get(**_AGR_KEY)
+    result = agreement_repo.get(**agr_key)
 
     assert result is None
 
@@ -171,3 +271,205 @@ def test_utc_now_iso_is_z_suffixed_utc():
     assert result.endswith("Z")
     parsed = dt.datetime.fromisoformat(result)
     assert parsed.utcoffset() == dt.timedelta(0)
+
+
+def test_monthly_estimate_sums_the_month(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    subscription_id,
+    year,
+    month,
+    decimal_total,
+):
+    subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1"))
+    subscription_repo.accumulate(charge_factory(decimal_second, decimal_zero, agreement_id="AGR-2"))
+
+    result = subscription_repo.monthly_estimate(subscription_id, year, month)  # act
+
+    assert result == decimal_total
+
+
+def test_monthly_estimate_ignores_other_months(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    subscription_id,
+    year,
+    month,
+    other_month,
+):
+    subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero, month=month))
+    subscription_repo.accumulate(charge_factory(decimal_second, decimal_zero, month=other_month))
+
+    result = subscription_repo.monthly_estimate(subscription_id, year, other_month)  # act
+
+    assert result == decimal_second
+
+
+def test_monthly_estimate_is_zero_when_absent(subscription_repo, year, month, decimal_zero):
+    result = subscription_repo.monthly_estimate("SUB-MISSING", year, month)  # act
+
+    assert result == decimal_zero
+
+
+def test_yearly_estimate_spans_a_year_boundary(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    subscription_id,
+    year,
+    prev_year,
+    last_month,
+    first_month,
+    decimal_total,
+):
+    subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=prev_year, month=last_month)
+    )
+    subscription_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, year=year, month=first_month)
+    )
+
+    result = subscription_repo.yearly_estimate(subscription_id, year, first_month)  # act
+
+    assert result == decimal_total
+
+
+def test_yearly_estimate_excludes_old_months(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    subscription_id,
+    year,
+    prev_year,
+    month,
+    other_month,
+):
+    # Trailing 12 months ending (2026, 5): (2025, 6) is the oldest included month, (2025, 5) is out.
+    subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=prev_year, month=other_month)
+    )
+    subscription_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, year=prev_year, month=month)
+    )
+
+    result = subscription_repo.yearly_estimate(subscription_id, year, month)  # act
+
+    assert result == decimal_first
+
+
+def test_agreement_monthly_estimate_sums(
+    agreement_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    agreement_id,
+    year,
+    month,
+    decimal_total,
+):
+    agreement_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+    agreement_repo.accumulate(charge_factory(decimal_second, decimal_zero))
+
+    result = agreement_repo.monthly_estimate(agreement_id, year, month)  # act
+
+    assert result == decimal_total
+
+
+def test_agreement_monthly_estimate_absent(agreement_repo, year, month, decimal_zero):
+    result = agreement_repo.monthly_estimate("AGR-MISSING", year, month)  # act
+
+    assert result == decimal_zero
+
+
+def test_agreement_yearly_estimate_spans_year(
+    agreement_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    agreement_id,
+    year,
+    prev_year,
+    last_month,
+    first_month,
+    decimal_total,
+):
+    agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=prev_year, month=last_month)
+    )
+    agreement_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, year=year, month=first_month)
+    )
+
+    result = agreement_repo.yearly_estimate(agreement_id, year, first_month)  # act
+
+    assert result == decimal_total
+
+
+def test_agreement_yearly_estimate_window(
+    agreement_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    agreement_id,
+    year,
+    prev_year,
+    month,
+    other_month,
+):
+    agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=prev_year, month=other_month)
+    )
+    agreement_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, year=prev_year, month=month)
+    )
+
+    result = agreement_repo.yearly_estimate(agreement_id, year, month)  # act
+
+    assert result == decimal_first
+
+
+def test_updated_returns_subscription_charges(
+    subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
+):
+    mocker.patch.object(repositories, "utc_now_iso", return_value="2026-05-07T08:05:00Z")
+    charge = charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1")
+    subscription_repo.accumulate(charge)
+
+    result = list(subscription_repo.updated(dt.date(2026, 5, 7)))  # act
+
+    assert result == [charge]
+
+
+def test_updated_excludes_other_dates(
+    subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
+):
+    mocker.patch.object(repositories, "utc_now_iso", return_value="2026-05-07T08:05:00Z")
+    subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+
+    result = list(subscription_repo.updated(dt.date(2026, 5, 8)))  # act
+
+    assert result == []
+
+
+def test_agreement_updated_returns_charges(
+    agreement_repo, mocker, charge_factory, decimal_first, decimal_zero, agreement_id, year, month
+):
+    mocker.patch.object(repositories, "utc_now_iso", return_value="2026-05-07T08:05:00Z")
+    agreement_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+
+    result = list(agreement_repo.updated(dt.date(2026, 5, 7)))  # act
+
+    assert result == [Charge("", agreement_id, year, month, decimal_first, decimal_zero)]

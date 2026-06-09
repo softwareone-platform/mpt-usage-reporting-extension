@@ -9,10 +9,7 @@ from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
     SubscriptionAccumulationRepository,
 )
-from mpt_usage_reporting_extension.persistence.sqlite.repositories import (
-    agreement_repository,
-    subscription_repository,
-)
+from mpt_usage_reporting_extension.persistence.sqlite import repositories
 
 _BUSY_TIMEOUT_MS = 5000
 
@@ -66,11 +63,11 @@ class SqliteDatabase:
 
     def subscription_repository(self) -> SubscriptionAccumulationRepository:
         """Return the subscription monthly accumulation repository."""
-        return subscription_repository(self._connection)
+        return repositories.SubscriptionAccumulationRepository(self._connection)
 
     def agreement_repository(self) -> AgreementAccumulationRepository:
         """Return the agreement monthly accumulation repository."""
-        return agreement_repository(self._connection)
+        return repositories.AgreementAccumulationRepository(self._connection)
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""
