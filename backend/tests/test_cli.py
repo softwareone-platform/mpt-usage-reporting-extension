@@ -21,7 +21,7 @@ def test_cli_reports_not_implemented():
 
 
 def test_run_reports_selected_statements(mocker):
-    mocker.patch.object(cli, "build_client")
+    mocker.patch.object(cli, "build_service")
     mocker.patch.object(cli.ExtensionSettings, "load")
     mocker.patch.object(cli, "SqliteDatabase")
     statements = [
@@ -34,7 +34,7 @@ def test_run_reports_selected_statements(mocker):
         Statement({"id": "BILL-2", "status": "Cancelled"}),
     ]
     selector = mocker.patch.object(cli, "StatementSelector").return_value
-    selector.select.side_effect = lambda ctx: ctx.statements.extend(statements)
+    selector.select = mocker.AsyncMock(side_effect=lambda ctx: ctx.statements.extend(statements))
 
     result = runner.invoke(cli.app, ["run", "--date", "2026-06-01"])
 
@@ -46,10 +46,11 @@ def test_run_reports_selected_statements(mocker):
 
 
 def test_run_reports_when_no_statements(mocker):
-    mocker.patch.object(cli, "build_client")
+    mocker.patch.object(cli, "build_service")
     mocker.patch.object(cli.ExtensionSettings, "load")
     mocker.patch.object(cli, "SqliteDatabase")
-    mocker.patch.object(cli, "StatementSelector")
+    selector = mocker.patch.object(cli, "StatementSelector").return_value
+    selector.select = mocker.AsyncMock()
 
     result = runner.invoke(cli.app, ["run", "--date", "2026-06-01"])
 

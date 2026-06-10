@@ -1,9 +1,11 @@
+import asyncio
 import datetime as dt
 import logging
 from typing import Annotated
 
 import typer
 
+from mpt_usage_reporting_extension.accumulation import ChargeTotals
 from mpt_usage_reporting_extension.charge_persistence import ChargePersister
 from mpt_usage_reporting_extension.charges import (
     ChargeAccumulator,
@@ -11,7 +13,7 @@ from mpt_usage_reporting_extension.charges import (
     ChargeStreamer,
 )
 from mpt_usage_reporting_extension.context import RunContext
-from mpt_usage_reporting_extension.mpt_client import build_client
+from mpt_usage_reporting_extension.mpt_client import build_service
 from mpt_usage_reporting_extension.persistence.sqlite.database import (
     SqliteDatabase,
     resolve_db_path,
@@ -64,16 +66,22 @@ def run(
     window = resolve_window(_to_date(date), _to_date(from_date), _to_date(till_date))
     settings = ExtensionSettings.load()
     ctx = RunContext(
-        api_client=build_client(),
+        api_service=build_service(),
         window=window,
         product_ids=settings.product_ids,
     )
-    StatementSelector().select(ctx)
-    StatementReport(ctx).render()
-    ctx.charge_totals = ChargeAccumulator().accumulate(ChargeStreamer().stream(ctx))
+    totals = asyncio.run(_collect(ctx))
+    ctx.charge_totals = totals
     with SqliteDatabase(resolve_db_path()) as db:
         ChargePersister().persist(ctx, db.subscription_repository(), db.agreement_repository())
-    ChargeReport(ctx.charge_totals).render()
+    ChargeReport(totals).render()
+
+
+async def _collect(ctx: RunContext) -> ChargeTotals:
+    """Select statements and accumulate their charges over the async client."""
+    await StatementSelector().select(ctx)
+    StatementReport(ctx).render()
+    return await ChargeAccumulator().accumulate(ChargeStreamer().stream(ctx))
 
 
 def _to_date(parsed: dt.datetime | None) -> dt.date | None:
