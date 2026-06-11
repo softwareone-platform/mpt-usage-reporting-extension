@@ -25,11 +25,18 @@ make run
 
 The service is exposed on `http://localhost:8080`.
 
+To run in local mode (`--local`) with Jaeger tracing and the frontend asset watcher, use:
+
+```bash
+make run-local
+```
+
+Local mode is configured by `compose.local.yaml` and requires `backend/.env.local`.
+
 Useful helper commands:
 
 ```bash
 make bash
-make shell
 make down
 ```
 

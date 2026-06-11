@@ -17,7 +17,7 @@ Schema migrations in this repository create and evolve a local SQLite database u
 by the accumulation stage.
 
 - The database file defaults to `storage.db` in the backend root. Override the
-  location with the `DEFAULT_DB_PATH` environment variable.
+  location with the `MPT_DB_PATH` environment variable.
 - The file and the migration state file (`.migrations-state.json`) are gitignored;
   they are recreated by running `make migrate-schema`.
 - Connection, schema creation, and decimal handling live in
