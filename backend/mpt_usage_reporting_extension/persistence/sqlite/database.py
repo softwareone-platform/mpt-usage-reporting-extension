@@ -1,5 +1,3 @@
-"""SQLite database handle and connection management."""
-
 import os
 import sqlite3
 from decimal import Decimal

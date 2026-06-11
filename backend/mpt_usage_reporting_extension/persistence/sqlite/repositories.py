@@ -1,5 +1,3 @@
-"""SQLite repository implementations for monthly accumulation."""
-
 import datetime as dt
 import sqlite3
 from collections.abc import Iterable
@@ -14,6 +12,7 @@ from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
     SubscriptionAccumulationRepository,
 )
+from mpt_usage_reporting_extension.types import Month, Year
 
 
 def utc_now_iso() -> str:
@@ -93,8 +92,8 @@ class _SubscriptionAccumulationRepository:
         *,
         subscription_id: str,
         agreement_id: str,
-        year: int,
-        month: int,
+        year: Year,
+        month: Month,
     ) -> SubscriptionMonthlyAccumulation | None:
         """Return the stored subscription bucket, or None when absent."""
         row = self.engine.get(
@@ -136,8 +135,8 @@ class _AgreementAccumulationRepository:
         self,
         *,
         agreement_id: str,
-        year: int,
-        month: int,
+        year: Year,
+        month: Month,
     ) -> AgreementMonthlyAccumulation | None:
         """Return the stored agreement bucket, or None when absent."""
         row = self.engine.get(agreement_id=agreement_id, year=year, month=month)

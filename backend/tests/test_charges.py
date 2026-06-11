@@ -1,140 +1,146 @@
-import datetime as dt
 from decimal import Decimal
 
-from mpt_api_client.resources.billing.statement_charges import StatementCharge
-
+from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
 from mpt_usage_reporting_extension.charges import (
-    ChargeAccumulation,
     ChargeAccumulator,
     ChargeReport,
     ChargeStreamer,
-    ChargeTotals,
 )
-from mpt_usage_reporting_extension.context import RunContext
-from mpt_usage_reporting_extension.window import RunWindow
 
 
-def _context(mocker, statement_ids=("BILL-1",), *, pages=None):
-    api_client = mocker.Mock()
-    if pages is not None:
-        _charges(api_client).return_value.stream.side_effect = [iter(page) for page in pages]
-    return RunContext(
-        api_client=api_client,
-        window=RunWindow(
-            start=dt.datetime.fromisoformat("2026-06-01T00:00:00+00:00"),
-            end=dt.datetime.fromisoformat("2026-06-02T00:00:00+00:00"),
-        ),
-        product_ids=("PRD-1",),
-        statements=[mocker.Mock(id=statement_id) for statement_id in statement_ids],
-    )
+async def _aiter(records):  # noqa: RUF029  # async generator: enables `async for` over a list
+    for record in records:
+        yield record
 
 
-def _charges(api_client):
-    billing = api_client.billing
+async def _drain(charges):
+    return [charge async for charge in charges]
+
+
+def _charges(api_service):
+    billing = api_service.client.billing
     return billing.statements.charges
 
 
-_YEAR = 2026
+async def test_stream_calls_endpoint_per_statement(statement_factory, run_context):
+    run_context.statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
+    stream = _charges(run_context.api_service).return_value.stream
+    stream.side_effect = [_aiter([]), _aiter([])]
 
+    await _drain(ChargeStreamer().stream(run_context))  # act
 
-def _price(ppx1, spx1):
-    price = {}
-    if ppx1 is not None:
-        price["PPx1"] = ppx1
-    if spx1 is not None:
-        price["SPx1"] = spx1
-    return price
-
-
-def _charge(agreement_id=None, subscription_id=None, created=None, ppx1=None, spx1=None):
-    payload = {}
-    if agreement_id is not None:
-        payload["agreement"] = {"id": agreement_id}
-    if subscription_id is not None:
-        payload["subscription"] = {"id": subscription_id}
-    if created is not None:
-        payload["audit"] = {"created": {"at": created}}
-    price = _price(ppx1, spx1)
-    if price:
-        payload["price"] = price
-    return StatementCharge(payload)
-
-
-def test_stream_calls_endpoint_per_statement(mocker):
-    ctx = _context(mocker, statement_ids=("BILL-1", "BILL-2"), pages=[[], []])
-
-    list(ChargeStreamer().stream(ctx))  # act
-
-    charges = _charges(ctx.api_client)
+    charges = _charges(run_context.api_service)
     assert [call.args[0] for call in charges.call_args_list] == ["BILL-1", "BILL-2"]
 
 
-def test_stream_yields_charges_across_statements(mocker):
-    page_one = [_charge(), _charge()]
-    page_two = [_charge()]
-    ctx = _context(mocker, statement_ids=("BILL-1", "BILL-2"), pages=[page_one, page_two])
+async def test_stream_attaches_statement_to_each_charge(
+    statement_factory, statement_charge_factory, run_context
+):
+    run_context.statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
+    pages = [[statement_charge_factory(), statement_charge_factory()], [statement_charge_factory()]]
+    stream = _charges(run_context.api_service).return_value.stream
+    stream.side_effect = [_aiter(page) for page in pages]
 
-    streamed = list(ChargeStreamer().stream(ctx))  # act
+    result = await _drain(ChargeStreamer().stream(run_context))
 
-    assert streamed == [*page_one, *page_two]
+    assert [charge.statement.id for charge in result] == ["BILL-1", "BILL-1", "BILL-2"]
 
 
-def test_stream_is_lazy(mocker):
-    ctx = _context(mocker, statement_ids=("BILL-1",), pages=[[]])
+async def test_stream_yields_charge_objects(
+    statement_factory, statement_charge_factory, run_context
+):
+    run_context.statements = [statement_factory("BILL-1")]
+    charges = [statement_charge_factory(), statement_charge_factory()]
+    stream = _charges(run_context.api_service).return_value.stream
+    stream.side_effect = [_aiter(charges)]
 
-    ChargeStreamer().stream(ctx)  # act
+    result = await _drain(ChargeStreamer().stream(run_context))
 
-    charges = _charges(ctx.api_client)
+    assert result == charges
+
+
+def test_stream_is_lazy(statement_factory, run_context):
+    run_context.statements = [statement_factory("BILL-1")]
+    stream = _charges(run_context.api_service).return_value.stream
+    stream.side_effect = [_aiter([])]
+
+    ChargeStreamer().stream(run_context)  # act
+
+    charges = _charges(run_context.api_service)
     assert charges.call_count == 0
 
 
-def test_accumulate_sums_by_full_key():
+async def test_accumulate_sums_by_full_key(statement_charge_factory, statement_factory):
+    june = statement_factory(issued="2026-06-01T10:00:00Z")
+    july = statement_factory(issued="2026-07-01T10:00:00Z")
     charges = [
-        _charge("AGR-1", "SUB-1", "2026-06-01T10:00:00Z", ppx1="1.50", spx1="2.00"),
-        _charge("AGR-1", "SUB-1", "2026-06-20T10:00:00Z", ppx1="0.50", spx1="1.00"),
-        _charge("AGR-1", "SUB-1", "2026-07-01T10:00:00Z", ppx1="3.00", spx1="4.00"),
+        statement_charge_factory("AGR-1", "SUB-1", statement=june, price=("1.50", "2.00")),
+        statement_charge_factory("AGR-1", "SUB-1", statement=june, price=("0.50", "1.00")),
+        statement_charge_factory("AGR-1", "SUB-1", statement=july, price=("3.00", "4.00")),
     ]
 
-    totals = ChargeAccumulator().accumulate(charges)  # act
+    result = await ChargeAccumulator().accumulate(_aiter(charges))
 
-    assert totals.charge_count == 3
-    june = totals.accumulations["AGR-1", "SUB-1", _YEAR, 6]
-    assert june.ppx1 == Decimal("2.00")
-    assert june.spx1 == Decimal("3.00")
-    assert totals.accumulations["AGR-1", "SUB-1", _YEAR, 7].ppx1 == Decimal("3.00")
+    assert result.charge_count == 3
+    june_bucket = result.accumulations["AGR-1", "SUB-1", 2026, 6]
+    assert june_bucket.ppx1 == Decimal("2.00")
+    assert june_bucket.spx1 == Decimal("3.00")
+    assert result.accumulations["AGR-1", "SUB-1", 2026, 7].ppx1 == Decimal("3.00")
 
 
-def test_accumulate_handles_missing_fields():
-    totals = ChargeAccumulator().accumulate([_charge()])  # act
+async def test_accumulate_handles_missing_fields(statement_charge_factory):
+    result = await ChargeAccumulator().accumulate(_aiter([statement_charge_factory()]))
 
-    assert totals.charge_count == 1
-    bucket = totals.accumulations["-", "agreement_additional", 0, 0]
+    assert result.charge_count == 1
+    bucket = result.accumulations["-", "agreement_additional_-", 2026, 6]
     assert bucket.ppx1 == Decimal(0)
     assert bucket.spx1 == Decimal(0)
 
 
-def test_accumulate_labels_missing_subscription():
-    charge = _charge("AGR-1", created="2026-06-01T10:00:00Z", ppx1="1.00")
+async def test_accumulate_labels_missing_subscription(statement_charge_factory, statement_factory):
+    statement = statement_factory(issued="2026-06-01T10:00:00Z")
+    charge = statement_charge_factory("AGR-1", statement=statement, price=("1.00", "1.00"))
 
-    totals = ChargeAccumulator().accumulate([charge])  # act
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
 
-    assert ("AGR-1", "agreement_additional", _YEAR, 6) in totals.accumulations
+    assert ("AGR-1", "agreement_additional_AGR-1", 2026, 6) in result.accumulations
 
 
-def test_accumulate_handles_unparseable_date():
-    charge = _charge("AGR-1", "SUB-1", "not-a-date", ppx1="1.00")
+async def test_accumulate_handles_unparseable_date(statement_charge_factory, statement_factory):
+    statement = statement_factory(issued="not-a-date")
+    charge = statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00"))
 
-    totals = ChargeAccumulator().accumulate([charge])  # act
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
 
-    bucket = totals.accumulations["AGR-1", "SUB-1", 0, 0]
+    bucket = result.accumulations["AGR-1", "SUB-1", None, None]
     assert bucket.ppx1 == Decimal("1.00")
 
 
+async def test_accumulate_prefers_cancelled_over_issued(
+    statement_charge_factory, statement_factory
+):
+    statement = statement_factory(issued="2026-06-01T10:00:00Z", cancelled="2026-07-01T10:00:00Z")
+    charge = statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00"))
+
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+
+    assert ("AGR-1", "SUB-1", 2026, 7) in result.accumulations
+
+
+async def test_accumulate_falls_back_to_issued(statement_charge_factory, statement_factory):
+    statement = statement_factory(issued="2026-06-01T10:00:00Z")
+    charge = statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00"))
+
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+
+    assert ("AGR-1", "SUB-1", 2026, 6) in result.accumulations
+
+
 def test_report_prints_summary_and_table(capsys):
-    accumulation = ChargeAccumulation("AGR-1", "SUB-1", _YEAR, 6, ppx1=Decimal("2.00"))
+    accumulation = ChargeAccumulation("AGR-1", "SUB-1", 2026, 6, ppx1=Decimal("2.00"))
     totals = ChargeTotals(
         charge_count=2,
-        accumulations={("AGR-1", "SUB-1", _YEAR, 6): accumulation},
+        accumulations={("AGR-1", "SUB-1", 2026, 6): accumulation},
     )
 
     ChargeReport(totals).render()  # act
@@ -143,6 +149,18 @@ def test_report_prints_summary_and_table(capsys):
     assert "Streamed 2 charge(s) into 1 accumulation(s)" in out
     assert "AGR-1" in out
     assert "SUB-1" in out
+
+
+def test_report_renders_none_for_missing_month(capsys):
+    accumulation = ChargeAccumulation("AGR-9", "SUB-9", None, None, ppx1=Decimal("1.00"))
+    totals = ChargeTotals(
+        charge_count=1,
+        accumulations={("AGR-9", "SUB-9", None, None): accumulation},
+    )
+
+    ChargeReport(totals).render()  # act
+
+    assert "None" in capsys.readouterr().out
 
 
 def test_report_prints_summary_when_empty(capsys):

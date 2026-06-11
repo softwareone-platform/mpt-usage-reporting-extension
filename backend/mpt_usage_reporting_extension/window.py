@@ -1,5 +1,3 @@
-"""Run-window resolution for the usage reporting CLI."""
-
 import datetime as dt
 from dataclasses import dataclass
 from typing import cast

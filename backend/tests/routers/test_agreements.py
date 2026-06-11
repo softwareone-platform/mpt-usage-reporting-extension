@@ -11,7 +11,7 @@ async def test_get_reads_marketplace(mocker, agreement_payload):
     ctx = mocker.Mock(spec=APIContext)
     ctx.mpt_api_service = mocker.Mock(agreements=mocker.Mock(get_by_id=get_by_id))
 
-    result = await get_agreement("AGR-1234-5678", ctx)  # act
+    result = await get_agreement("AGR-1234-5678", ctx)
 
     get_by_id.assert_awaited_once_with("AGR-1234-5678")
     assert result.payload == agreement_payload
@@ -24,7 +24,7 @@ async def test_sync_reads_marketplace(mocker, agreement_payload):
     ctx = mocker.Mock(spec=APIContext)
     ctx.mpt_api_service = mocker.Mock(agreements=mocker.Mock(get_by_id=get_by_id))
 
-    result = await sync_agreement("AGR-1234-5678", ctx)  # act
+    result = await sync_agreement("AGR-1234-5678", ctx)
 
     get_by_id.assert_awaited_once_with("AGR-1234-5678")
     assert result.payload == agreement_payload

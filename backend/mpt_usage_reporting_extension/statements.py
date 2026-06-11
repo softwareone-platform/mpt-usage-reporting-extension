@@ -1,5 +1,3 @@
-"""Billing statement selection for the usage reporting ``run`` command."""
-
 import datetime as dt
 import logging
 from collections.abc import Iterable
@@ -54,6 +52,7 @@ _SELECT_FIELDS = (
     _ID,
     _STATUS,
     _AUDIT_CREATED_AT,
+    _AUDIT_ISSUED_AT,
     _AUDIT_CANCELLED_AT,
     _AGREEMENT_ID,
     _PRODUCT_ID,
@@ -72,8 +71,9 @@ class StatementSelector:
     def __init__(self, filter_builder: "StatementFilterBuilder | None" = None) -> None:
         self._filter_builder = filter_builder or StatementFilterBuilder()
 
-    def select(self, ctx: RunContext) -> None:
+    async def select(self, ctx: RunContext) -> None:
         """Select statements issued or cancelled within the window and save them on ``ctx``."""
+        statements = ctx.api_service.client.billing.statements
         merged: dict[str, Statement] = {}
         for audit_field, status in _PASSES:
             query = self._filter_builder.build(
@@ -85,10 +85,7 @@ class StatementSelector:
             )
             merged.update({
                 statement.id: statement
-                for statement in ctx.api_client.billing.statements
-                .filter(query)
-                .select(*_SELECT_FIELDS)
-                .iterate()
+                async for statement in statements.filter(query).select(*_SELECT_FIELDS).iterate()
             })
         ctx.statements = list(merged.values())
 

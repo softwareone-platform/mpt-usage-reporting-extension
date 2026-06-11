@@ -13,30 +13,30 @@ def _utc(iso: str) -> dt.datetime:
 def test_default_window_is_yesterday_utc():
     today = dt.date.fromisoformat("2026-06-02")
 
-    window = resolve_window(today=today)  # act
+    result = resolve_window(today=today)
 
-    assert window == RunWindow(start=_utc("2026-06-01"), end=_utc("2026-06-02"))
+    assert result == RunWindow(start=_utc("2026-06-01"), end=_utc("2026-06-02"))
 
 
 def test_date_selects_a_single_day():
-    window = resolve_window(date=dt.date.fromisoformat("2026-05-10"))  # act
+    result = resolve_window(date=dt.date.fromisoformat("2026-05-10"))
 
-    assert window == RunWindow(start=_utc("2026-05-10"), end=_utc("2026-05-11"))
+    assert result == RunWindow(start=_utc("2026-05-10"), end=_utc("2026-05-11"))
 
 
 def test_from_till_range_is_half_open():
-    window = resolve_window(
+    result = resolve_window(
         from_date=dt.date.fromisoformat("2026-05-01"),
         till_date=dt.date.fromisoformat("2026-05-03"),
-    )  # act
+    )
 
-    assert window == RunWindow(start=_utc("2026-05-01"), end=_utc("2026-05-04"))
+    assert result == RunWindow(start=_utc("2026-05-01"), end=_utc("2026-05-04"))
 
 
 def test_single_bound_applies_to_both_ends():
-    window = resolve_window(from_date=dt.date.fromisoformat("2026-05-07"))  # act
+    result = resolve_window(from_date=dt.date.fromisoformat("2026-05-07"))
 
-    assert window == RunWindow(start=_utc("2026-05-07"), end=_utc("2026-05-08"))
+    assert result == RunWindow(start=_utc("2026-05-07"), end=_utc("2026-05-08"))
 
 
 def test_date_combined_with_range_is_rejected():

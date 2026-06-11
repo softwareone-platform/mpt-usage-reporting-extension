@@ -11,27 +11,27 @@ from mpt_usage_reporting_extension.persistence.sqlite import database
 def test_resolve_db_path_default(monkeypatch):
     monkeypatch.delenv("DEFAULT_DB_PATH", raising=False)
 
-    path = database.resolve_db_path()  # act
+    result = database.resolve_db_path()
 
-    assert path.name == "storage.db"
-    assert path.parent == Path(mpt_usage_reporting_extension.__file__).parent.parent
+    assert result.name == "storage.db"
+    assert result.parent == Path(mpt_usage_reporting_extension.__file__).parent.parent
 
 
 def test_resolve_db_path_env_override(monkeypatch, tmp_path):
     target = tmp_path / "custom.db"
     monkeypatch.setenv("MPT_DB_PATH", str(target))
 
-    path = database.resolve_db_path()  # act
+    result = database.resolve_db_path()
 
-    assert path == target
+    assert result == target
 
 
 def test_connection_exposes_both_tables(db):
-    rows = db.connection.execute(
+    result = db.connection.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'",
-    ).fetchall()  # act
+    ).fetchall()
 
-    names = {row["name"] for row in rows}
+    names = {row["name"] for row in result}
     assert "subscription_monthly_accumulation" in names
     assert "agreement_monthly_accumulation" in names
 
@@ -44,13 +44,13 @@ def test_decimal_roundtrip_preserves_precision(db):
         ("AGR-1", 2026, 5, Decimal("0.1"), Decimal("0.2"), "2026-05-07T08:05:00Z"),
     )
 
-    row = db.connection.execute(
+    result = db.connection.execute(
         "SELECT ppx1, spx1 FROM agreement_monthly_accumulation",
-    ).fetchone()  # act
+    ).fetchone()
 
-    assert isinstance(row["ppx1"], Decimal)
-    assert row["ppx1"] == Decimal("0.1")
-    assert row["spx1"] == Decimal("0.2")
+    assert isinstance(result["ppx1"], Decimal)
+    assert result["ppx1"] == Decimal("0.1")
+    assert result["spx1"] == Decimal("0.2")
 
 
 def test_context_manager_closes_connection(tmp_path):
