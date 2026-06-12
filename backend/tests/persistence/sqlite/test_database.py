@@ -1,3 +1,4 @@
+import sqlite3
 from decimal import Decimal
 from pathlib import Path
 
@@ -67,3 +68,15 @@ async def test_context_manager_closes_connection(tmp_path):
 
     with pytest.raises(ValueError):
         await connection.execute("SELECT 1")  # act
+
+
+async def test_setup_failure_closes_connection(mocker, tmp_path):
+    connection = mocker.AsyncMock()
+    connection.create_function.side_effect = sqlite3.OperationalError("boom")
+    mocker.patch.object(database.aiosqlite, "connect", mocker.AsyncMock(return_value=connection))
+
+    with pytest.raises(sqlite3.OperationalError):
+        async with database.SqliteDatabase(tmp_path / "storage.db"):  # act
+            raise AssertionError("__aenter__ should raise before the body runs")
+
+    connection.close.assert_awaited_once()

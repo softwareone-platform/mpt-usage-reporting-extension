@@ -37,6 +37,13 @@ def resolve_db_path() -> Path:
     return Path(db_path) if db_path else DEFAULT_DB_PATH
 
 
+async def _configure(connection: aiosqlite.Connection) -> None:
+    """Register the row factory, the decimal_add function, and the busy timeout."""
+    connection.row_factory = sqlite3.Row
+    await connection.create_function("decimal_add", 2, _decimal_add, deterministic=True)
+    await connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+
+
 class SqliteDatabase:
     """SQLite store opened from a file path, handing out accumulation repositories."""
 
@@ -53,9 +60,11 @@ class SqliteDatabase:
             detect_types=sqlite3.PARSE_DECLTYPES,
             isolation_level=None,
         )
-        connection.row_factory = sqlite3.Row
-        await connection.create_function("decimal_add", 2, _decimal_add, deterministic=True)
-        await connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+        try:
+            await _configure(connection)
+        except sqlite3.Error:
+            await connection.close()
+            raise
         self._connection = connection
         return self
 
