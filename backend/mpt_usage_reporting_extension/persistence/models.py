@@ -40,3 +40,13 @@ class Charge:
     month: Month
     ppx1: Decimal
     spx1: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class PriceEstimate:
+    """Current-month (PPxM/SPxM) and trailing-year (PPxY/SPxY) purchase/sales sums."""
+
+    ppxm: Decimal
+    spxm: Decimal
+    ppxy: Decimal
+    spxy: Decimal

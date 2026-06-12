@@ -1,11 +1,11 @@
 import datetime as dt
 from collections.abc import AsyncIterator
-from decimal import Decimal
 from typing import Protocol
 
 from mpt_usage_reporting_extension.persistence.models import (
     AgreementMonthlyAccumulation,
     Charge,
+    PriceEstimate,
     SubscriptionMonthlyAccumulation,
 )
 from mpt_usage_reporting_extension.types import Month, Year
@@ -29,12 +29,8 @@ class SubscriptionAccumulationRepository(Protocol):
         """Return the stored subscription bucket, or None when absent."""
         ...
 
-    async def monthly_estimate(self, subscription_id: str, year: Year, month: Month) -> Decimal:
-        """Sum ppx1 for the subscription's bucket in the single (year, month)."""
-        ...
-
-    async def yearly_estimate(self, subscription_id: str, year: Year, month: Month) -> Decimal:
-        """Sum ppx1 across the subscription's trailing 12 months ending at (year, month)."""
+    async def estimate(self, subscription_id: str, year: Year, month: Month) -> PriceEstimate:
+        """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the subscription."""
         ...
 
     def updated(self, updated_on: dt.date) -> AsyncIterator[Charge]:
@@ -59,12 +55,8 @@ class AgreementAccumulationRepository(Protocol):
         """Return the stored agreement bucket, or None when absent."""
         ...
 
-    async def monthly_estimate(self, agreement_id: str, year: Year, month: Month) -> Decimal:
-        """Sum ppx1 for the agreement's bucket in the single (year, month)."""
-        ...
-
-    async def yearly_estimate(self, agreement_id: str, year: Year, month: Month) -> Decimal:
-        """Sum ppx1 across the agreement's trailing 12 months ending at (year, month)."""
+    async def estimate(self, agreement_id: str, year: Year, month: Month) -> PriceEstimate:
+        """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the agreement."""
         ...
 
     def updated(self, updated_on: dt.date) -> AsyncIterator[Charge]:

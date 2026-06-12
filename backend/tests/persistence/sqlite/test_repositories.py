@@ -289,9 +289,9 @@ async def test_monthly_estimate_sums_the_month(
         charge_factory(decimal_second, decimal_zero, agreement_id="AGR-2")
     )
 
-    result = await subscription_repo.monthly_estimate(subscription_id, year, month)  # act
+    result = await subscription_repo.estimate(subscription_id, year, month)  # act
 
-    assert result == decimal_total
+    assert result.ppxm == decimal_total
 
 
 async def test_monthly_estimate_ignores_other_months(
@@ -310,15 +310,15 @@ async def test_monthly_estimate_ignores_other_months(
         charge_factory(decimal_second, decimal_zero, month=other_month)
     )
 
-    result = await subscription_repo.monthly_estimate(subscription_id, year, other_month)  # act
+    result = await subscription_repo.estimate(subscription_id, year, other_month)  # act
 
-    assert result == decimal_second
+    assert result.ppxm == decimal_second
 
 
 async def test_monthly_estimate_is_zero_when_absent(subscription_repo, year, month, decimal_zero):
-    result = await subscription_repo.monthly_estimate("SUB-MISSING", year, month)  # act
+    result = await subscription_repo.estimate("SUB-MISSING", year, month)  # act
 
-    assert result == decimal_zero
+    assert result.ppxm == decimal_zero
 
 
 async def test_yearly_estimate_spans_a_year_boundary(
@@ -341,9 +341,9 @@ async def test_yearly_estimate_spans_a_year_boundary(
         charge_factory(decimal_second, decimal_zero, year=year, month=first_month)
     )
 
-    result = await subscription_repo.yearly_estimate(subscription_id, year, first_month)  # act
+    result = await subscription_repo.estimate(subscription_id, year, first_month)  # act
 
-    assert result == decimal_total
+    assert result.ppxy == decimal_total
 
 
 async def test_yearly_estimate_excludes_old_months(
@@ -366,9 +366,45 @@ async def test_yearly_estimate_excludes_old_months(
         charge_factory(decimal_second, decimal_zero, year=prev_year, month=month)
     )
 
-    result = await subscription_repo.yearly_estimate(subscription_id, year, month)  # act
+    result = await subscription_repo.estimate(subscription_id, year, month)  # act
 
-    assert result == decimal_first
+    assert result.ppxy == decimal_first
+
+
+async def test_monthly_estimate_reports_pp_and_sp(
+    subscription_repo, charge_factory, decimal_ppx1, decimal_spx1, subscription_id, year, month
+):
+    await subscription_repo.accumulate(charge_factory(decimal_ppx1, decimal_spx1))
+
+    result = await subscription_repo.estimate(subscription_id, year, month)  # act
+
+    assert result.ppxm == decimal_ppx1
+    assert result.spxm == decimal_spx1
+
+
+async def test_yearly_estimate_sums_pp_and_sp(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    subscription_id,
+    year,
+    prev_year,
+    last_month,
+    first_month,
+    decimal_total,
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_second, year=prev_year, month=last_month)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_second, decimal_first, year=year, month=first_month)
+    )
+
+    result = await subscription_repo.estimate(subscription_id, year, first_month)  # act
+
+    assert result.ppxy == decimal_total
+    assert result.spxy == decimal_total
 
 
 async def test_agreement_monthly_estimate_sums(
@@ -385,15 +421,15 @@ async def test_agreement_monthly_estimate_sums(
     await agreement_repo.accumulate(charge_factory(decimal_first, decimal_zero))
     await agreement_repo.accumulate(charge_factory(decimal_second, decimal_zero))
 
-    result = await agreement_repo.monthly_estimate(agreement_id, year, month)  # act
+    result = await agreement_repo.estimate(agreement_id, year, month)  # act
 
-    assert result == decimal_total
+    assert result.ppxm == decimal_total
 
 
 async def test_agreement_monthly_estimate_absent(agreement_repo, year, month, decimal_zero):
-    result = await agreement_repo.monthly_estimate("AGR-MISSING", year, month)  # act
+    result = await agreement_repo.estimate("AGR-MISSING", year, month)  # act
 
-    assert result == decimal_zero
+    assert result.ppxm == decimal_zero
 
 
 async def test_agreement_yearly_estimate_spans_year(
@@ -416,9 +452,9 @@ async def test_agreement_yearly_estimate_spans_year(
         charge_factory(decimal_second, decimal_zero, year=year, month=first_month)
     )
 
-    result = await agreement_repo.yearly_estimate(agreement_id, year, first_month)  # act
+    result = await agreement_repo.estimate(agreement_id, year, first_month)  # act
 
-    assert result == decimal_total
+    assert result.ppxy == decimal_total
 
 
 async def test_agreement_yearly_estimate_window(
@@ -440,9 +476,9 @@ async def test_agreement_yearly_estimate_window(
         charge_factory(decimal_second, decimal_zero, year=prev_year, month=month)
     )
 
-    result = await agreement_repo.yearly_estimate(agreement_id, year, month)  # act
+    result = await agreement_repo.estimate(agreement_id, year, month)  # act
 
-    assert result == decimal_first
+    assert result.ppxy == decimal_first
 
 
 async def test_updated_returns_subscription_charges(

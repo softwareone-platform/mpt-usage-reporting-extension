@@ -8,6 +8,7 @@ import aiosqlite
 from mpt_usage_reporting_extension.persistence.models import (
     AgreementMonthlyAccumulation,
     Charge,
+    PriceEstimate,
     SubscriptionMonthlyAccumulation,
 )
 from mpt_usage_reporting_extension.types import Month, Year
@@ -63,23 +64,27 @@ class _AccumulationEngine:
         row: sqlite3.Row | None = await cursor.fetchone()
         return row
 
-    async def sum_ppx1(
-        self,
-        key_column: str,
-        key_value: str,
-        start_ordinal: int,
-        end_ordinal: int,
-    ) -> Decimal:
-        """Sum ppx1 over rows whose month-ordinal falls in [start_ordinal, end_ordinal]."""
+    async def estimate(self, key_column: str, key_value: str, anchor_ordinal: int) -> PriceEstimate:
+        """Sum the anchor month (PPxM/SPxM) and the trailing window (PPxY/SPxY) in one query."""
         select_sql = (
-            f"SELECT ppx1 FROM {self.table} "  # noqa: S608
+            f"SELECT ppx1, spx1, year * 12 + month AS ordinal FROM {self.table} "  # noqa: S608
             f"WHERE {key_column} = :key_value "
-            "AND year * 12 + month BETWEEN :start AND :end"
+            "AND year * 12 + month BETWEEN :start AND :anchor"
         )
-        bindings = {"key_value": key_value, "start": start_ordinal, "end": end_ordinal}
+        bindings = {
+            "key_value": key_value,
+            "start": anchor_ordinal - _ROLLING_MONTHS + 1,
+            "anchor": anchor_ordinal,
+        }
         cursor = await self.connection.execute(select_sql, bindings)
         rows = await cursor.fetchall()
-        return sum((Decimal(row["ppx1"]) for row in rows), Decimal(0))
+        monthly = [row for row in rows if row["ordinal"] == anchor_ordinal]
+        return PriceEstimate(
+            ppxm=sum((Decimal(row["ppx1"]) for row in monthly), Decimal(0)),
+            spxm=sum((Decimal(row["spx1"]) for row in monthly), Decimal(0)),
+            ppxy=sum((Decimal(row["ppx1"]) for row in rows), Decimal(0)),
+            spxy=sum((Decimal(row["spx1"]) for row in rows), Decimal(0)),
+        )
 
     async def rows_updated_on(self, day: str) -> AsyncIterator[sqlite3.Row]:
         """Yield rows whose updated_at calendar day equals the ISO day (YYYY-MM-DD), streamed."""
@@ -163,17 +168,10 @@ class SubscriptionAccumulationRepository:
             updated_at=dt.datetime.fromisoformat(row["updated_at"]),
         )
 
-    async def monthly_estimate(self, subscription_id: str, year: Year, month: Month) -> Decimal:
-        """Sum ppx1 for the subscription's bucket in the single (year, month)."""
-        ordinal = _month_ordinal(year, month)
-        return await self.engine.sum_ppx1("subscription_id", subscription_id, ordinal, ordinal)
-
-    async def yearly_estimate(self, subscription_id: str, year: Year, month: Month) -> Decimal:
-        """Sum ppx1 across the subscription's trailing 12 months ending at (year, month)."""
-        end = _month_ordinal(year, month)
-        return await self.engine.sum_ppx1(
-            "subscription_id", subscription_id, end - _ROLLING_MONTHS + 1, end
-        )
+    async def estimate(self, subscription_id: str, year: Year, month: Month) -> PriceEstimate:
+        """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the subscription."""
+        anchor = _month_ordinal(year, month)
+        return await self.engine.estimate("subscription_id", subscription_id, anchor)
 
     async def updated(self, updated_on: dt.date) -> AsyncIterator[Charge]:
         """Yield the subscription buckets last written on updated_on, as Charges (streamed).
@@ -224,17 +222,10 @@ class AgreementAccumulationRepository:
             updated_at=dt.datetime.fromisoformat(row["updated_at"]),
         )
 
-    async def monthly_estimate(self, agreement_id: str, year: Year, month: Month) -> Decimal:
-        """Sum ppx1 for the agreement's bucket in the single (year, month)."""
-        ordinal = _month_ordinal(year, month)
-        return await self.engine.sum_ppx1("agreement_id", agreement_id, ordinal, ordinal)
-
-    async def yearly_estimate(self, agreement_id: str, year: Year, month: Month) -> Decimal:
-        """Sum ppx1 across the agreement's trailing 12 months ending at (year, month)."""
-        end = _month_ordinal(year, month)
-        return await self.engine.sum_ppx1(
-            "agreement_id", agreement_id, end - _ROLLING_MONTHS + 1, end
-        )
+    async def estimate(self, agreement_id: str, year: Year, month: Month) -> PriceEstimate:
+        """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the agreement."""
+        anchor = _month_ordinal(year, month)
+        return await self.engine.estimate("agreement_id", agreement_id, anchor)
 
     async def updated(self, updated_on: dt.date) -> AsyncIterator[Charge]:
         """Yield the agreement buckets last written on updated_on, as Charges (streamed).

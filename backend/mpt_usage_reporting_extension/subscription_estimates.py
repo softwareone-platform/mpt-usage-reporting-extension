@@ -59,11 +59,17 @@ async def _estimate(
     subscription_id: str,
     anchor: dt.date,
 ) -> dict[str, dict[str, float]]:
-    """Build the price payload from the current-month (PPxM) and rolling-year (PPxY) sums."""
+    """Build the price payload from current-month (PPxM/SPxM) and rolling-year (PPxY/SPxY) sums."""
     year, month = anchor.year, Month(anchor.month)
-    ppxm = await subscription_repo.monthly_estimate(subscription_id, year, month)
-    ppxy = await subscription_repo.yearly_estimate(subscription_id, year, month)
-    return {"price": {"PPxM": float(ppxm), "PPxY": float(ppxy)}}
+    estimate = await subscription_repo.estimate(subscription_id, year, month)
+    return {
+        "price": {
+            "PPxM": float(estimate.ppxm),
+            "SPxM": float(estimate.spxm),
+            "PPxY": float(estimate.ppxy),
+            "SPxY": float(estimate.spxy),
+        },
+    }
 
 
 class SubscriptionEstimatePusher:
