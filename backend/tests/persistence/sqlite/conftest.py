@@ -1,4 +1,4 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 
 import pytest
 
@@ -6,10 +6,10 @@ from mpt_usage_reporting_extension.persistence.sqlite.database import SqliteData
 
 
 @pytest.fixture
-def db(tmp_path, schema) -> Iterator[SqliteDatabase]:
-    with SqliteDatabase(tmp_path / "storage.db") as database:
+async def db(tmp_path, schema) -> AsyncIterator[SqliteDatabase]:
+    async with SqliteDatabase(tmp_path / "storage.db") as database:
         for statement in schema:
-            database.connection.execute(statement)
+            await database.connection.execute(statement)  # noqa: WPS476
         yield database
 
 

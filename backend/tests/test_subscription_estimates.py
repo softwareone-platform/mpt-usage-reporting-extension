@@ -62,7 +62,7 @@ def _update_mock(ctx):
 
 
 async def test_push_updates_each_real_subscription(mocker, totals_factory, ctx_factory):
-    subscription_repo = mocker.Mock()
+    subscription_repo = mocker.AsyncMock()
     subscription_repo.monthly_estimate.return_value = Decimal("5.00")
     subscription_repo.yearly_estimate.return_value = Decimal("5.00")
     ctx = ctx_factory(totals_factory("SUB-1", "SUB-2", "agreement_additional_AGR-9"))
@@ -75,7 +75,7 @@ async def test_push_updates_each_real_subscription(mocker, totals_factory, ctx_f
 
 
 async def test_push_skips_synthetic_subscriptions(mocker, totals_factory, ctx_factory):
-    subscription_repo = mocker.Mock()
+    subscription_repo = mocker.AsyncMock()
     ctx = ctx_factory(totals_factory("agreement_additional_AGR-9"))
     update = _update_mock(ctx)
 
@@ -85,7 +85,7 @@ async def test_push_skips_synthetic_subscriptions(mocker, totals_factory, ctx_fa
 
 
 async def test_push_ignores_missing_totals(mocker, ctx_factory):
-    subscription_repo = mocker.Mock()
+    subscription_repo = mocker.AsyncMock()
     ctx = ctx_factory(None)
     update = _update_mock(ctx)
 
@@ -99,7 +99,7 @@ async def test_push_estimates_for_the_current_month(
 ):
     clock = mocker.patch.object(se.dt, "datetime")
     clock.now.return_value.date.return_value = dt.date(year, month, 1)
-    subscription_repo = mocker.Mock()
+    subscription_repo = mocker.AsyncMock()
     subscription_repo.monthly_estimate.return_value = Decimal(0)
     subscription_repo.yearly_estimate.return_value = Decimal(0)
     ctx = ctx_factory(totals_factory("SUB-1"))
@@ -111,7 +111,7 @@ async def test_push_estimates_for_the_current_month(
 
 
 async def test_push_exits_nonzero_when_an_update_fails(mocker, totals_factory, ctx_factory):
-    subscription_repo = mocker.Mock()
+    subscription_repo = mocker.AsyncMock()
     subscription_repo.monthly_estimate.return_value = Decimal("1.00")
     subscription_repo.yearly_estimate.return_value = Decimal("1.00")
     ctx = ctx_factory(totals_factory("SUB-1", "SUB-2"))
@@ -126,7 +126,7 @@ async def test_push_exits_nonzero_when_an_update_fails(mocker, totals_factory, c
 
 
 async def test_push_exits_nonzero_on_unexpected_error(mocker, totals_factory, ctx_factory):
-    subscription_repo = mocker.Mock()
+    subscription_repo = mocker.AsyncMock()
     subscription_repo.monthly_estimate.return_value = Decimal("1.00")
     subscription_repo.yearly_estimate.return_value = Decimal("1.00")
     ctx = ctx_factory(totals_factory("SUB-1", "SUB-2"))
@@ -143,7 +143,7 @@ async def test_push_exits_nonzero_on_unexpected_error(mocker, totals_factory, ct
 async def test_push_skips_dateless_buckets(
     mocker, charge_accumulation_factory, charge_totals_factory, ctx_factory
 ):
-    subscription_repo = mocker.Mock()
+    subscription_repo = mocker.AsyncMock()
     subscription_repo.monthly_estimate.return_value = Decimal("5.00")
     subscription_repo.yearly_estimate.return_value = Decimal("5.00")
     dateless = charge_accumulation_factory("SUB-1", year=None, month=None)

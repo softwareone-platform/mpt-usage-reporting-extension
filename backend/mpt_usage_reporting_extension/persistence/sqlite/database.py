@@ -4,6 +4,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Self
 
+import aiosqlite
+
 from mpt_usage_reporting_extension.constants import DEFAULT_DB_PATH
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
@@ -39,36 +41,42 @@ class SqliteDatabase:
     """SQLite store opened from a file path, handing out accumulation repositories."""
 
     def __init__(self, path: Path) -> None:
+        self._path = path
+        self._connection: aiosqlite.Connection | None = None
+
+    async def __aenter__(self) -> Self:
+        """Open the connection and register the Decimal helpers and busy timeout."""
         sqlite3.register_adapter(Decimal, _adapt_decimal)
         sqlite3.register_converter("DECIMAL", _convert_decimal)
-        self._connection = sqlite3.connect(
-            path,
+        connection = await aiosqlite.connect(
+            self._path,
             detect_types=sqlite3.PARSE_DECLTYPES,
             isolation_level=None,
         )
-        self._connection.row_factory = sqlite3.Row
-        self._connection.create_function("decimal_add", 2, _decimal_add, deterministic=True)
-        self._connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
-
-    def __enter__(self) -> Self:
+        connection.row_factory = sqlite3.Row
+        await connection.create_function("decimal_add", 2, _decimal_add, deterministic=True)
+        await connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+        self._connection = connection
         return self
 
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.close()
 
     @property
-    def connection(self) -> sqlite3.Connection:
+    def connection(self) -> aiosqlite.Connection:
         """Return the underlying SQLite connection."""
+        if self._connection is None:
+            raise RuntimeError("Database is not open; enter the 'async with' context first.")
         return self._connection
 
     def subscription_repository(self) -> SubscriptionAccumulationRepository:
         """Return the subscription monthly accumulation repository."""
-        return repositories.SubscriptionAccumulationRepository(self._connection)
+        return repositories.SubscriptionAccumulationRepository(self.connection)
 
     def agreement_repository(self) -> AgreementAccumulationRepository:
         """Return the agreement monthly accumulation repository."""
-        return repositories.AgreementAccumulationRepository(self._connection)
+        return repositories.AgreementAccumulationRepository(self.connection)
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close the underlying SQLite connection."""
-        self._connection.close()
+        await self.connection.close()

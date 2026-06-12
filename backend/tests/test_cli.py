@@ -10,6 +10,14 @@ def runner():
     return CliRunner()
 
 
+@pytest.fixture
+def stub_database(mocker):
+    database = mocker.patch.object(cli, "SqliteDatabase").return_value.__aenter__.return_value
+    database.subscription_repository = mocker.Mock(return_value=mocker.AsyncMock())
+    database.agreement_repository = mocker.Mock(return_value=mocker.AsyncMock())
+    return database
+
+
 def test_cli_help_shows_command(runner):
     result = runner.invoke(cli.app, ["--help"])
 
@@ -24,10 +32,9 @@ def test_cli_reports_not_implemented(runner):
     assert "Not implemented" in result.stdout
 
 
-def test_run_reports_selected_statements(mocker, runner):
+def test_run_reports_selected_statements(mocker, runner, stub_database):
     mocker.patch.object(cli, "build_service")
     mocker.patch.object(cli.ExtensionSettings, "load")
-    mocker.patch.object(cli, "SqliteDatabase")
     statements = [
         Statement({
             "id": "BILL-1",
@@ -49,10 +56,9 @@ def test_run_reports_selected_statements(mocker, runner):
     assert "-" in result.stdout  # missing fields render as a dash
 
 
-def test_run_reports_when_no_statements(mocker, runner):
+def test_run_reports_when_no_statements(mocker, runner, stub_database):
     mocker.patch.object(cli, "build_service")
     mocker.patch.object(cli.ExtensionSettings, "load")
-    mocker.patch.object(cli, "SqliteDatabase")
     selector = mocker.patch.object(cli, "StatementSelector").return_value
     selector.select = mocker.AsyncMock()
 

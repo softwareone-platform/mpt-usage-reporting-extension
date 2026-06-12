@@ -1,7 +1,9 @@
 import datetime as dt
 import sqlite3
-from collections.abc import Iterable, Iterator
+from collections.abc import AsyncIterator, Iterable
 from decimal import Decimal
+
+import aiosqlite
 
 from mpt_usage_reporting_extension.persistence.models import (
     AgreementMonthlyAccumulation,
@@ -43,25 +45,25 @@ def _row_to_charge(row: sqlite3.Row, subscription_id: str) -> Charge:
 class _AccumulationEngine:
     """Generic additive-upsert engine over a single key tuple."""
 
-    def __init__(self, connection: sqlite3.Connection, table: str) -> None:
+    def __init__(self, connection: aiosqlite.Connection, table: str) -> None:
         self.connection = connection
         self.table = table
 
-    def accumulate(self, *, ppx1: Decimal, spx1: Decimal, **key_fields: object) -> None:
+    async def accumulate(self, *, ppx1: Decimal, spx1: Decimal, **key_fields: object) -> None:
         """Additively upsert ppx1/spx1 for the keyed bucket."""
-        self.connection.execute(
+        await self.connection.execute(
             self._upsert_sql(**key_fields),
             self._upsert_params(ppx1=ppx1, spx1=spx1, **key_fields),
         )
 
-    def get(self, **key_fields: object) -> sqlite3.Row | None:
+    async def get(self, **key_fields: object) -> sqlite3.Row | None:
         """Return the stored row for the keyed bucket, or None when absent."""
         select_sql = f"SELECT * FROM {self.table} WHERE {_where_clause(key_fields)}"  # noqa: S608
-        cursor = self.connection.execute(select_sql, key_fields)
-        row: sqlite3.Row | None = cursor.fetchone()
+        cursor = await self.connection.execute(select_sql, key_fields)
+        row: sqlite3.Row | None = await cursor.fetchone()
         return row
 
-    def sum_ppx1(
+    async def sum_ppx1(
         self,
         key_column: str,
         key_value: str,
@@ -75,16 +77,19 @@ class _AccumulationEngine:
             "AND year * 12 + month BETWEEN :start AND :end"
         )
         bindings = {"key_value": key_value, "start": start_ordinal, "end": end_ordinal}
-        rows = self.connection.execute(select_sql, bindings).fetchall()
+        cursor = await self.connection.execute(select_sql, bindings)
+        rows = await cursor.fetchall()
         return sum((Decimal(row["ppx1"]) for row in rows), Decimal(0))
 
-    def rows_updated_on(self, day: str) -> Iterator[sqlite3.Row]:
+    async def rows_updated_on(self, day: str) -> AsyncIterator[sqlite3.Row]:
         """Yield rows whose updated_at calendar day equals the ISO day (YYYY-MM-DD), streamed."""
         select_sql = (
             f"SELECT * FROM {self.table} "  # noqa: S608
             "WHERE substr(updated_at, 1, 10) = :day"
         )
-        yield from self.connection.execute(select_sql, {"day": day})
+        async with self.connection.execute(select_sql, {"day": day}) as cursor:
+            async for row in cursor:
+                yield row
 
     def _upsert_params(
         self,
@@ -115,14 +120,14 @@ class SubscriptionAccumulationRepository:
 
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        connection: aiosqlite.Connection,
         table: str = "subscription_monthly_accumulation",
     ) -> None:
         self.engine = _AccumulationEngine(connection=connection, table=table)
 
-    def accumulate(self, charge: Charge) -> None:
+    async def accumulate(self, charge: Charge) -> None:
         """Additively accumulate the charge into the subscription bucket."""
-        self.engine.accumulate(
+        await self.engine.accumulate(
             ppx1=charge.ppx1,
             spx1=charge.spx1,
             subscription_id=charge.subscription_id,
@@ -131,7 +136,7 @@ class SubscriptionAccumulationRepository:
             month=charge.month,
         )
 
-    def get(
+    async def get(
         self,
         *,
         subscription_id: str,
@@ -140,7 +145,7 @@ class SubscriptionAccumulationRepository:
         month: Month,
     ) -> SubscriptionMonthlyAccumulation | None:
         """Return the stored subscription bucket, or None when absent."""
-        row = self.engine.get(
+        row = await self.engine.get(
             subscription_id=subscription_id,
             agreement_id=agreement_id,
             year=year,
@@ -158,24 +163,24 @@ class SubscriptionAccumulationRepository:
             updated_at=dt.datetime.fromisoformat(row["updated_at"]),
         )
 
-    def monthly_estimate(self, subscription_id: str, year: Year, month: Month) -> Decimal:
+    async def monthly_estimate(self, subscription_id: str, year: Year, month: Month) -> Decimal:
         """Sum ppx1 for the subscription's bucket in the single (year, month)."""
         ordinal = _month_ordinal(year, month)
-        return self.engine.sum_ppx1("subscription_id", subscription_id, ordinal, ordinal)
+        return await self.engine.sum_ppx1("subscription_id", subscription_id, ordinal, ordinal)
 
-    def yearly_estimate(self, subscription_id: str, year: Year, month: Month) -> Decimal:
+    async def yearly_estimate(self, subscription_id: str, year: Year, month: Month) -> Decimal:
         """Sum ppx1 across the subscription's trailing 12 months ending at (year, month)."""
         end = _month_ordinal(year, month)
-        return self.engine.sum_ppx1(
+        return await self.engine.sum_ppx1(
             "subscription_id", subscription_id, end - _ROLLING_MONTHS + 1, end
         )
 
-    def updated(self, updated_on: dt.date) -> Iterator[Charge]:
+    async def updated(self, updated_on: dt.date) -> AsyncIterator[Charge]:
         """Yield the subscription buckets last written on updated_on, as Charges (streamed).
 
         Lazily streamed; consume while the database connection is open.
         """
-        for row in self.engine.rows_updated_on(updated_on.isoformat()):
+        async for row in self.engine.rows_updated_on(updated_on.isoformat()):
             yield _row_to_charge(row, row["subscription_id"])
 
 
@@ -184,14 +189,14 @@ class AgreementAccumulationRepository:
 
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        connection: aiosqlite.Connection,
         table: str = "agreement_monthly_accumulation",
     ) -> None:
         self.engine = _AccumulationEngine(connection=connection, table=table)
 
-    def accumulate(self, charge: Charge) -> None:
+    async def accumulate(self, charge: Charge) -> None:
         """Additively accumulate the charge into the agreement bucket."""
-        self.engine.accumulate(
+        await self.engine.accumulate(
             ppx1=charge.ppx1,
             spx1=charge.spx1,
             agreement_id=charge.agreement_id,
@@ -199,7 +204,7 @@ class AgreementAccumulationRepository:
             month=charge.month,
         )
 
-    def get(
+    async def get(
         self,
         *,
         agreement_id: str,
@@ -207,7 +212,7 @@ class AgreementAccumulationRepository:
         month: Month,
     ) -> AgreementMonthlyAccumulation | None:
         """Return the stored agreement bucket, or None when absent."""
-        row = self.engine.get(agreement_id=agreement_id, year=year, month=month)
+        row = await self.engine.get(agreement_id=agreement_id, year=year, month=month)
         if row is None:
             return None
         return AgreementMonthlyAccumulation(
@@ -219,20 +224,22 @@ class AgreementAccumulationRepository:
             updated_at=dt.datetime.fromisoformat(row["updated_at"]),
         )
 
-    def monthly_estimate(self, agreement_id: str, year: Year, month: Month) -> Decimal:
+    async def monthly_estimate(self, agreement_id: str, year: Year, month: Month) -> Decimal:
         """Sum ppx1 for the agreement's bucket in the single (year, month)."""
         ordinal = _month_ordinal(year, month)
-        return self.engine.sum_ppx1("agreement_id", agreement_id, ordinal, ordinal)
+        return await self.engine.sum_ppx1("agreement_id", agreement_id, ordinal, ordinal)
 
-    def yearly_estimate(self, agreement_id: str, year: Year, month: Month) -> Decimal:
+    async def yearly_estimate(self, agreement_id: str, year: Year, month: Month) -> Decimal:
         """Sum ppx1 across the agreement's trailing 12 months ending at (year, month)."""
         end = _month_ordinal(year, month)
-        return self.engine.sum_ppx1("agreement_id", agreement_id, end - _ROLLING_MONTHS + 1, end)
+        return await self.engine.sum_ppx1(
+            "agreement_id", agreement_id, end - _ROLLING_MONTHS + 1, end
+        )
 
-    def updated(self, updated_on: dt.date) -> Iterator[Charge]:
+    async def updated(self, updated_on: dt.date) -> AsyncIterator[Charge]:
         """Yield the agreement buckets last written on updated_on, as Charges (streamed).
 
         Lazily streamed; consume while the database connection is open.
         """
-        for row in self.engine.rows_updated_on(updated_on.isoformat()):
+        async for row in self.engine.rows_updated_on(updated_on.isoformat()):
             yield _row_to_charge(row, "")

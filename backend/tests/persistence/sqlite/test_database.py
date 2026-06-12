@@ -1,4 +1,3 @@
-import sqlite3
 from decimal import Decimal
 from pathlib import Path
 
@@ -26,36 +25,45 @@ def test_resolve_db_path_env_override(monkeypatch, tmp_path):
     assert result == target
 
 
-def test_connection_exposes_both_tables(db):
-    result = db.connection.execute(
+async def test_connection_exposes_both_tables(db):
+    cursor = await db.connection.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'",
-    ).fetchall()
+    )
+    result = await cursor.fetchall()
 
     names = {row["name"] for row in result}
     assert "subscription_monthly_accumulation" in names
     assert "agreement_monthly_accumulation" in names
 
 
-def test_decimal_roundtrip_preserves_precision(db):
-    db.connection.execute(
+async def test_decimal_roundtrip_preserves_precision(db):
+    await db.connection.execute(
         "INSERT INTO agreement_monthly_accumulation "
         "(agreement_id, year, month, ppx1, spx1, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
         ("AGR-1", 2026, 5, Decimal("0.1"), Decimal("0.2"), "2026-05-07T08:05:00Z"),
     )
 
-    result = db.connection.execute(
+    cursor = await db.connection.execute(
         "SELECT ppx1, spx1 FROM agreement_monthly_accumulation",
-    ).fetchone()
+    )
+    result = await cursor.fetchone()
 
     assert isinstance(result["ppx1"], Decimal)
     assert result["ppx1"] == Decimal("0.1")
     assert result["spx1"] == Decimal("0.2")
 
 
-def test_context_manager_closes_connection(tmp_path):
-    with database.SqliteDatabase(tmp_path / "storage.db") as db:
+def test_connection_before_open_raises(tmp_path):
+    db = database.SqliteDatabase(tmp_path / "storage.db")
+
+    with pytest.raises(RuntimeError):
+        db.subscription_repository()  # act
+
+
+async def test_context_manager_closes_connection(tmp_path):
+    async with database.SqliteDatabase(tmp_path / "storage.db") as db:
         connection = db.connection
 
-    with pytest.raises(sqlite3.ProgrammingError):
-        connection.execute("SELECT 1")  # act
+    with pytest.raises(ValueError):
+        await connection.execute("SELECT 1")  # act

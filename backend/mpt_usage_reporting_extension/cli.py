@@ -77,9 +77,9 @@ def run(
 async def _run(ctx: RunContext) -> None:
     """Collect charges, persist them, push subscription estimates, and render the report."""
     ctx.charge_totals = await _collect(ctx)
-    with SqliteDatabase(resolve_db_path()) as db:
+    async with SqliteDatabase(resolve_db_path()) as db:
         subscription_repo = db.subscription_repository()
-        ChargePersister().persist(ctx, subscription_repo, db.agreement_repository())
+        await ChargePersister().persist(ctx, subscription_repo, db.agreement_repository())
         await SubscriptionEstimatePusher().push(ctx, subscription_repo)
     ChargeReport(ctx.charge_totals).render()
 

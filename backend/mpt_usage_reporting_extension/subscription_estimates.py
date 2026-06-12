@@ -54,15 +54,15 @@ def _collect_failures(
     return failed
 
 
-def _estimate(
+async def _estimate(
     subscription_repo: SubscriptionAccumulationRepository,
     subscription_id: str,
     anchor: dt.date,
 ) -> dict[str, dict[str, float]]:
     """Build the price payload from the current-month (PPxM) and rolling-year (PPxY) sums."""
     year, month = anchor.year, Month(anchor.month)
-    ppxm = subscription_repo.monthly_estimate(subscription_id, year, month)
-    ppxy = subscription_repo.yearly_estimate(subscription_id, year, month)
+    ppxm = await subscription_repo.monthly_estimate(subscription_id, year, month)
+    ppxy = await subscription_repo.yearly_estimate(subscription_id, year, month)
     return {"price": {"PPxM": float(ppxm), "PPxY": float(ppxy)}}
 
 
@@ -107,7 +107,7 @@ class SubscriptionEstimatePusher:
         anchor: dt.date,
     ) -> str | None:
         """PUT one subscription's price estimate; return its id on failure, else None."""
-        estimate = _estimate(subscription_repo, subscription_id, anchor)
+        estimate = await _estimate(subscription_repo, subscription_id, anchor)
         try:
             await subscriptions.update(subscription_id, estimate)
         except MPTError:
