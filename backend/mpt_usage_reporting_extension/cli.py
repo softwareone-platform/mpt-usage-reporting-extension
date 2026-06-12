@@ -20,6 +20,7 @@ from mpt_usage_reporting_extension.persistence.sqlite.database import (
 )
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 from mpt_usage_reporting_extension.statements import StatementReport, StatementSelector
+from mpt_usage_reporting_extension.subscription_estimates import SubscriptionEstimatePusher
 from mpt_usage_reporting_extension.window import resolve_window
 
 app = typer.Typer(
@@ -70,11 +71,17 @@ def run(
         window=window,
         product_ids=settings.product_ids,
     )
-    totals = asyncio.run(_collect(ctx))
-    ctx.charge_totals = totals
-    with SqliteDatabase(resolve_db_path()) as db:
-        ChargePersister().persist(ctx, db.subscription_repository(), db.agreement_repository())
-    ChargeReport(totals).render()
+    asyncio.run(_run(ctx))
+
+
+async def _run(ctx: RunContext) -> None:
+    """Collect charges, persist them, push subscription estimates, and render the report."""
+    ctx.charge_totals = await _collect(ctx)
+    async with SqliteDatabase(resolve_db_path()) as db:
+        subscription_repo = db.subscription_repository()
+        await ChargePersister().persist(ctx, subscription_repo, db.agreement_repository())
+        await SubscriptionEstimatePusher().push(ctx, subscription_repo)
+    ChargeReport(ctx.charge_totals).render()
 
 
 async def _collect(ctx: RunContext) -> ChargeTotals:

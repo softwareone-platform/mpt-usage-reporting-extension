@@ -1,29 +1,40 @@
+import pytest
 from mpt_api_client.resources.billing.statements import Statement
 from typer.testing import CliRunner
 
 from mpt_usage_reporting_extension import cli
 
-runner = CliRunner()
+
+@pytest.fixture
+def runner():
+    return CliRunner()
 
 
-def test_cli_help_shows_command():
+@pytest.fixture
+def stub_database(mocker):
+    database = mocker.patch.object(cli, "SqliteDatabase").return_value.__aenter__.return_value
+    database.subscription_repository = mocker.Mock(return_value=mocker.AsyncMock())
+    database.agreement_repository = mocker.Mock(return_value=mocker.AsyncMock())
+    return database
+
+
+def test_cli_help_shows_command(runner):
     result = runner.invoke(cli.app, ["--help"])
 
     assert result.exit_code == 0
     assert "Report billing subscription usage" in result.stdout
 
 
-def test_cli_reports_not_implemented():
+def test_cli_reports_not_implemented(runner):
     result = runner.invoke(cli.app, ["billing-subscription-usage"])
 
     assert result.exit_code == 0
     assert "Not implemented" in result.stdout
 
 
-def test_run_reports_selected_statements(mocker):
+def test_run_reports_selected_statements(mocker, runner, stub_database):
     mocker.patch.object(cli, "build_service")
     mocker.patch.object(cli.ExtensionSettings, "load")
-    mocker.patch.object(cli, "SqliteDatabase")
     statements = [
         Statement({
             "id": "BILL-1",
@@ -45,10 +56,9 @@ def test_run_reports_selected_statements(mocker):
     assert "-" in result.stdout  # missing fields render as a dash
 
 
-def test_run_reports_when_no_statements(mocker):
+def test_run_reports_when_no_statements(mocker, runner, stub_database):
     mocker.patch.object(cli, "build_service")
     mocker.patch.object(cli.ExtensionSettings, "load")
-    mocker.patch.object(cli, "SqliteDatabase")
     selector = mocker.patch.object(cli, "StatementSelector").return_value
     selector.select = mocker.AsyncMock()
 

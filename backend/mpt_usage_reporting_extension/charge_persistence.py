@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class ChargePersister:
     """Upsert each accumulated monthly bucket into both accumulation tables."""
 
-    def persist(
+    async def persist(
         self,
         ctx: RunContext,
         subscription_repo: SubscriptionAccumulationRepository,
@@ -30,9 +30,9 @@ class ChargePersister:
         if totals is None:
             return
         for bucket in totals.accumulations.values():
-            self._write(bucket, subscription_repo, agreement_repo)
+            await self._write(bucket, subscription_repo, agreement_repo)  # noqa: WPS476
 
-    def _write(
+    async def _write(
         self,
         bucket: ChargeAccumulation,
         subscription_repo: SubscriptionAccumulationRepository,
@@ -54,5 +54,5 @@ class ChargePersister:
             ppx1=bucket.ppx1,
             spx1=bucket.spx1,
         )
-        subscription_repo.accumulate(charge)
-        agreement_repo.accumulate(charge)
+        await subscription_repo.accumulate(charge)
+        await agreement_repo.accumulate(charge)

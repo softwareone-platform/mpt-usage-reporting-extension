@@ -1,13 +1,43 @@
 import datetime as dt
+from decimal import Decimal
 
 import pytest
 from mpt_api_client.models.model import BaseModel
 from mpt_api_client.resources.billing.statement_charges import StatementCharge
 from mpt_api_client.resources.billing.statements import Statement
 
-from mpt_usage_reporting_extension.accumulation import ChargeTotals
+from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.window import RunWindow
+
+
+@pytest.fixture
+def schema():
+    return (
+        """
+        CREATE TABLE subscription_monthly_accumulation (
+            subscription_id TEXT NOT NULL,
+            agreement_id TEXT NOT NULL,
+            year INTEGER NOT NULL CHECK (year BETWEEN 1000 AND 9999),
+            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+            ppx1 DECIMAL NOT NULL DEFAULT '0',
+            spx1 DECIMAL NOT NULL DEFAULT '0',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (subscription_id, agreement_id, year, month)
+        )
+        """,
+        """
+        CREATE TABLE agreement_monthly_accumulation (
+            agreement_id TEXT NOT NULL,
+            year INTEGER NOT NULL CHECK (year BETWEEN 1000 AND 9999),
+            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+            ppx1 DECIMAL NOT NULL DEFAULT '0',
+            spx1 DECIMAL NOT NULL DEFAULT '0',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (agreement_id, year, month)
+        )
+        """,
+    )
 
 
 @pytest.fixture
@@ -34,17 +64,19 @@ def agreement_payload():
     }
 
 
-_DEFAULT_ISSUED_AT = "2026-06-01T00:00:00Z"
+@pytest.fixture
+def default_issued_at():
+    return "2026-06-01T00:00:00Z"
 
 
 @pytest.fixture
-def statement_factory():
+def statement_factory(default_issued_at):
     def factory(statement_id=None, *, issued=None, cancelled=None):
         payload = {}
         if statement_id is not None:
             payload["id"] = statement_id
         if issued is None and cancelled is None:
-            issued = _DEFAULT_ISSUED_AT
+            issued = default_issued_at
         audit = {}
         if issued is not None:
             audit["issued"] = {"at": issued}
@@ -83,6 +115,21 @@ def statement_charge_factory(statement_factory, price_factory):
         charge = StatementCharge(payload)
         charge.statement = statement_factory() if statement is None else statement
         return charge
+
+    return factory
+
+
+@pytest.fixture
+def charge_accumulation_factory():
+    def factory(subscription_id, *, agreement_id="AGR-1", year=2026, month=6, ppx1=None, spx1=None):
+        return ChargeAccumulation(
+            agreement_id,
+            subscription_id,
+            year,
+            month,
+            Decimal("1.00") if ppx1 is None else ppx1,
+            Decimal(0) if spx1 is None else spx1,
+        )
 
     return factory
 
