@@ -6,6 +6,7 @@ authors = [{ name = "SoftwareOne AG" }]
 requires-python = ">=3.12,<4"
 license = { text = "Apache-2.0 license" }
 dependencies = [
+    "aiosqlite>=0.22.1",
     "mpt-api-client==6.3.*",
     "mpt-extension-sdk==6.3.*",
     "mpt-tool==6.0.*",
@@ -85,7 +86,7 @@ statistics = false
 per-file-ignores = [
   # The leading `*` makes this match both CI (`migrations/...`) and pre-commit (`backend/migrations/...`) paths.
   "*migrations/**:WPS102",
-  "*tests/**:WPS202,WPS432",
+  "*tests/**:WPS202,WPS432,WPS211",
 ]
 
 [tool.ruff]

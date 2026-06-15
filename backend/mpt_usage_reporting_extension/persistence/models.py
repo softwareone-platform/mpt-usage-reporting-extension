@@ -40,3 +40,22 @@ class Charge:
     month: Month
     ppx1: Decimal
     spx1: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class PriceEstimate:
+    """Current-month (PPxM/SPxM) and trailing-year (PPxY/SPxY) purchase/sales sums."""
+
+    ppxm: Decimal
+    spxm: Decimal
+    ppxy: Decimal
+    spxy: Decimal
+
+    def to_dict(self) -> dict[str, float]:
+        """Return the estimate as the API price payload (PPxM/SPxM/PPxY/SPxY)."""
+        return {
+            "PPxM": float(self.ppxm),
+            "SPxM": float(self.spxm),
+            "PPxY": float(self.ppxy),
+            "SPxY": float(self.spxy),
+        }

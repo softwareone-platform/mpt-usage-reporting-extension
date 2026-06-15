@@ -9,7 +9,7 @@ duplicate those tables.
 
 | System | Purpose | Auth | Configuration | Code |
 | --- | --- | --- | --- | --- |
-| SoftwareOne Marketplace (MPT) API | Select billing statements, stream charges, and read/sync agreements | Bearer token | `MPT_API_BASE_URL`, `MPT_API_TOKEN`, `MPT_PRODUCTS_IDS` | [`backend/mpt_usage_reporting_extension/mpt_client.py`](../backend/mpt_usage_reporting_extension/mpt_client.py), `statements.py`, `charges.py` |
+| SoftwareOne Marketplace (MPT) API | Select billing statements, stream charges, and read/sync agreements | Bearer token | `MPT_API_BASE_URL`, `MPT_API_TOKEN`, `MPT_PRODUCTS_IDS` | [`backend/mpt_usage_reporting_extension/mpt_client.py`](../backend/mpt_usage_reporting_extension/mpt_client.py), `services/statements.py`, `services/charges.py` |
 | MPT Extension SDK runtime | Hosts the extension app (event/API/plug routes) and provides settings and context | Extension credentials | `SDK_EXTENSION_API_KEY`, `SDK_EXTENSION_ID`, `SDK_EXTENSION_URL` | provided by `mpt-extension-sdk` |
 | Airtable (optional) | `mpt-tool` storage backend when enabled | API key | `MPT_TOOL_STORAGE_TYPE`, `MPT_TOOL_STORAGE_AIRTABLE_API_KEY`, `MPT_TOOL_STORAGE_AIRTABLE_BASE_ID`, `MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME` | `mpt-tool` |
 | Jaeger / OpenTelemetry (local) | Distributed tracing in local/dev mode | none (local endpoint) | `SDK_OTEL_SERVICE_NAME`, `SDK_OTEL_EXPORTERS`, `OTEL_EXPORTER_OTLP_ENDPOINT` | enabled in `--local` mode |

@@ -5,45 +5,21 @@ from typing import Annotated
 
 import typer
 
-from mpt_usage_reporting_extension.accumulation import ChargeTotals
-from mpt_usage_reporting_extension.charge_persistence import ChargePersister
-from mpt_usage_reporting_extension.charges import (
-    ChargeAccumulator,
-    ChargeReport,
-    ChargeStreamer,
-)
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.mpt_client import build_service
-from mpt_usage_reporting_extension.persistence.sqlite.database import (
-    SqliteDatabase,
-    resolve_db_path,
-)
+from mpt_usage_reporting_extension.pipeline import UsageReportingPipeline
 from mpt_usage_reporting_extension.settings import ExtensionSettings
-from mpt_usage_reporting_extension.statements import StatementReport, StatementSelector
 from mpt_usage_reporting_extension.window import resolve_window
 
 app = typer.Typer(
     help="Report MPT billing subscription usage.",
-    no_args_is_help=False,
+    no_args_is_help=True,
 )
 
-NOT_IMPLEMENTED_ART = r"""
-  _   _       _     _                 _                           _           _
- | \ | |     | |   (_)               | |                         | |         | |
- |  \| | ___ | |_   _ _ __ ___  _ __ | | ___ _ __ ___   ___ _ __ | |_ ___  __| |
- | . ` |/ _ \| __| | | '_ ` _ \| '_ \| |/ _ \ '_ ` _ \ / _ \ '_ \| __/ _ \/ _` |
- | |\  | (_) | |_  | | | | | | | |_) | |  __/ | | | | |  __/ | | | ||  __/ (_| |
- |_| \_|\___/ \__| |_|_| |_| |_| .__/|_|\___|_| |_| |_|\___|_| |_|\__\___|\__,_|
-                               | |
-                               |_|
-"""
 
-
-@app.command()
-def billing_subscription_usage() -> None:
-    """Report billing subscription usage for an account."""
-    typer.secho(NOT_IMPLEMENTED_ART, fg=typer.colors.YELLOW)
-    typer.secho("Not implemented", fg=typer.colors.YELLOW)
+@app.callback()
+def _main() -> None:
+    """Report MPT billing subscription usage (keeps ``run`` as a named subcommand)."""
 
 
 @app.command()
@@ -70,18 +46,7 @@ def run(
         window=window,
         product_ids=settings.product_ids,
     )
-    totals = asyncio.run(_collect(ctx))
-    ctx.charge_totals = totals
-    with SqliteDatabase(resolve_db_path()) as db:
-        ChargePersister().persist(ctx, db.subscription_repository(), db.agreement_repository())
-    ChargeReport(totals).render()
-
-
-async def _collect(ctx: RunContext) -> ChargeTotals:
-    """Select statements and accumulate their charges over the async client."""
-    await StatementSelector().select(ctx)
-    StatementReport(ctx).render()
-    return await ChargeAccumulator().accumulate(ChargeStreamer().stream(ctx))
+    asyncio.run(UsageReportingPipeline(ctx).run())
 
 
 def _to_date(parsed: dt.datetime | None) -> dt.date | None:
