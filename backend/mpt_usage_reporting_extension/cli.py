@@ -8,6 +8,7 @@ import typer
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.mpt_client import build_service
 from mpt_usage_reporting_extension.pipeline import UsageReportingPipeline
+from mpt_usage_reporting_extension.services.accumulation_cleanup import do_cleanup
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 from mpt_usage_reporting_extension.window import resolve_window
 
@@ -47,6 +48,27 @@ def run(
         product_ids=settings.product_ids,
     )
     asyncio.run(UsageReportingPipeline(ctx).run())
+
+
+@app.command()
+def cleanup(
+    date: Annotated[
+        dt.datetime | None,
+        typer.Option(
+            "--date",
+            formats=["%Y-%m-%d"],
+            help="Retention anchor day (YYYY-MM-DD); defaults to today UTC.",
+        ),
+    ] = None,
+) -> None:
+    """Delete accumulation rows older than the rolling 18-month retention window."""
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    anchor = _to_date(date) or _utc_today()
+    asyncio.run(do_cleanup(anchor))
+
+
+def _utc_today() -> dt.date:
+    return dt.datetime.now(tz=dt.UTC).date()
 
 
 def _to_date(parsed: dt.datetime | None) -> dt.date | None:
