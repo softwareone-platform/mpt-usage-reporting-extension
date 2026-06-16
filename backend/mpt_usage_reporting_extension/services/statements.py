@@ -6,10 +6,10 @@ from typing import Any
 import typer
 from mpt_api_client import RQLQuery
 from mpt_api_client.resources.billing.statements import Statement
+from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 from rich.console import Console
 from rich.table import Table
 
-from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.window import RunWindow
 
 logger = logging.getLogger(__name__)
@@ -65,21 +65,31 @@ class StatementSelector:
 
     Runs two RQL passes (``audit.issued.at`` and ``audit.cancelled.at``), merges the
     results by ``statement.id`` so a statement matched by both passes appears once, and
-    stores them on the :class:`RunContext`.
+    returns them.
     """
 
-    def __init__(self, filter_builder: "StatementFilterBuilder | None" = None) -> None:
+    def __init__(
+        self,
+        api_service: MPTAPIService,
+        filter_builder: "StatementFilterBuilder | None" = None,
+    ) -> None:
+        self._api_service = api_service
         self._filter_builder = filter_builder or StatementFilterBuilder()
 
-    async def select(self, ctx: RunContext) -> None:
-        """Select statements issued or cancelled within the window and save them on ``ctx``."""
-        statements = ctx.api_service.client.billing.statements
+    async def select(
+        self,
+        window: RunWindow,
+        product_ids: tuple[str, ...],
+        seller_id: str,
+    ) -> list[Statement]:
+        """Select statements issued or cancelled within the window, merged by id."""
+        statements = self._api_service.client.billing.statements
         merged: dict[str, Statement] = {}
         for audit_field, status in _PASSES:
             query = self._filter_builder.build(
-                ctx.product_ids,
-                ctx.seller_id,
-                ctx.window,
+                product_ids,
+                seller_id,
+                window,
                 audit_field,
                 status,
             )
@@ -87,7 +97,7 @@ class StatementSelector:
                 statement.id: statement
                 async for statement in statements.filter(query).select(*_SELECT_FIELDS).iterate()
             })
-        ctx.statements = list(merged.values())
+        return list(merged.values())
 
 
 class StatementFilterBuilder:
@@ -146,22 +156,22 @@ class StatementFilterBuilder:
 class StatementReport:
     """Render the statements selected by a run as a console table."""
 
-    def __init__(self, ctx: RunContext) -> None:
-        self._ctx = ctx
+    def __init__(self, statements: list[Statement], window: RunWindow) -> None:
+        self._statements = statements
+        self._window = window
 
     def render(self) -> None:
         """Print the run summary line and, when statements were selected, the table."""
-        ctx = self._ctx
-        start = ctx.window.start.strftime("%Y-%m-%d")
-        end = ctx.window.end.strftime("%Y-%m-%d")
-        count = len(ctx.statements)
+        start = self._window.start.strftime("%Y-%m-%d")
+        end = self._window.end.strftime("%Y-%m-%d")
+        count = len(self._statements)
         typer.echo(f"Selected {count} statement(s) for {start}..{end}")
-        if ctx.statements:
+        if self._statements:
             Console().print(self._table())
 
     def _table(self) -> Table:
         table = Table(*_REPORT_HEADERS)
-        for statement in self._ctx.statements:
+        for statement in self._statements:
             table.add_row(*(self._field(statement, path) for path in _REPORT_PATHS))
         return table
 

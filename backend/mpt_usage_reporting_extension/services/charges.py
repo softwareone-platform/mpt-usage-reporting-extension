@@ -3,11 +3,12 @@ from collections.abc import AsyncIterator
 
 import typer
 from mpt_api_client.resources.billing.statement_charges import StatementCharge
+from mpt_api_client.resources.billing.statements import Statement
+from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 from rich.console import Console
 from rich.table import Table
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
-from mpt_usage_reporting_extension.context import RunContext
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,10 @@ _REPORT_HEADERS = ("Agreement ID", "Subscription ID", "Year", "Month", "PPx1", "
 class ChargeStreamer:
     """Stream charges for each selected statement without buffering."""
 
-    async def stream(self, ctx: RunContext) -> AsyncIterator[StatementCharge]:
+    def __init__(self, api_service: MPTAPIService) -> None:
+        self._api_service = api_service
+
+    async def stream(self, statements: list[Statement]) -> AsyncIterator[StatementCharge]:
         """Yield charges for every selected statement, one statement at a time.
 
         Calls ``GET /public/v1/billing/statements/{id}/charges`` via the JSONL
@@ -25,10 +29,10 @@ class ChargeStreamer:
         whole response in memory. The owning statement is attached to each charge as
         ``charge.statement`` so the accumulation month can be derived from it.
         """
-        statements = ctx.api_service.client.billing.statements
-        for statement in ctx.statements:
+        client = self._api_service.client.billing.statements
+        for statement in statements:
             logger.info("Streaming charges for statement %s", statement.id)
-            async for charge in statements.charges(statement.id).stream():
+            async for charge in client.charges(statement.id).stream():
                 charge.statement = statement
                 yield charge
 

@@ -11,8 +11,9 @@ below.
 extension that reports billing subscription usage. It has two faces:
 
 - a **CLI batch job** that selects billing statements, streams their charges,
-  accumulates them per subscription/agreement and month, and persists the
-  totals to a local SQLite store;
+  accumulates them per subscription/agreement and month, persists the totals to
+  a local SQLite store, and pushes the resulting price estimates back to each
+  subscription;
 - a small **extension app** (event, API, and plug routes) plus a TypeScript
   frontend that surfaces agreement actions in the Marketplace UI.
 
@@ -26,18 +27,30 @@ The backend is built on the MPT Extension SDK.
 
 - `run` — the main command. Resolves a date window (`--date`, or `--from-date`
   / `--till-date`; defaults to yesterday UTC), then collects, accumulates, and
-  persists usage for that window.
-- `billing_subscription_usage` — placeholder command (not yet implemented).
+  persists usage for that window, and pushes the resulting price estimates back
+  to each subscription.
 
 ### Run data flow
 
+`cli.run` resolves the inputs (steps 1–2), then hands a `RunContext` to
+`UsageReportingPipeline` (`pipeline.py`), which runs the remaining stages inside a
+single `SqliteDatabase` context — opened first, so a database failure aborts before
+any API work. Each stage is a service constructed with only the dependencies it needs
+(the API service and/or the repositories); `RunContext` carries the run inputs.
+
 1. Resolve the window (`window.py` -> `RunWindow`, a half-open `[start, end)` UTC range).
 2. Build a `RunContext` (`context.py`) with the MPT API service, window, and product ids.
-3. `StatementSelector` (`statements.py`) selects billing statements via RQL.
-4. `ChargeStreamer` (`charges.py`) streams charges line-by-line (JSONL).
+3. `StatementSelector` (`services/statements.py`) selects billing statements via RQL.
+4. `ChargeStreamer` (`services/charges.py`) streams charges line-by-line (JSONL).
 5. `ChargeAccumulator` (`accumulation.py`) groups charges by
    `AccumulationKey` = `(agreement_id, subscription_id, year, month)` into `ChargeTotals`.
-6. `ChargePersister` (`charge_persistence.py`) upserts the totals into SQLite.
+6. `AccumulationPersister` (`services/charge_persistence.py`) upserts the totals into SQLite.
+7. `SubscriptionEstimateUpdater` (`services/subscription_estimates.py`) reads each real
+   subscription's estimate from SQLite — current calendar-month `PPxM`/`SPxM` and
+   trailing-12-month `PPxY`/`SPxY` sums, anchored on today (UTC) — and concurrently `PUT`s
+   `{"price": {PPxM, SPxM, PPxY, SPxY}}` back to the subscription via the MPT API, skipping
+   synthetic (`agreement_additional_*`) and dateless buckets. It renders a per-subscription
+   report (values + `OK`/`FAILED`) with `[k/N]` progress and exits non-zero on any failure.
 
 ## Persistence (SQLite)
 
@@ -72,19 +85,22 @@ See [migrations.md](migrations.md).
 
 | Module | Responsibility |
 |---|---|
-| `cli.py` | Typer CLI entry (`run`, `billing_subscription_usage`) |
-| `statements.py`, `charges.py` | Statement selection and charge streaming from the MPT API |
+| `cli.py` | Typer CLI entry (`run`) |
+| `pipeline.py` | `UsageReportingPipeline` — orchestrates the end-to-end run |
+| `services/statements.py`, `services/charges.py` | Statement selection and charge streaming from the MPT API |
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
-| `charge_persistence.py`, `persistence/` | Persisting accumulated totals to SQLite |
+| `services/charge_persistence.py`, `persistence/` | Persisting accumulated totals to SQLite |
+| `services/subscription_estimates.py` | `SubscriptionEstimateUpdater` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
 | `app.py`, `routers/` | Extension event/API/plug routes |
 | `flows/` | Order pipelines and steps |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |
 
 ## External integrations
 
-MPT Marketplace API (billing statements/charges, agreements), the MPT Extension
-SDK, optional Airtable (`mpt-tool` storage), and Jaeger/OpenTelemetry for local
-tracing. See [external-integrations.md](external-integrations.md).
+MPT Marketplace API (billing statements/charges, subscription price estimates,
+agreements), the MPT Extension SDK, optional Airtable (`mpt-tool` storage), and
+Jaeger/OpenTelemetry for local tracing. See
+[external-integrations.md](external-integrations.md).
 
 ## Deployment shape
 

@@ -1,0 +1,53 @@
+import pytest
+from mpt_api_client.resources.billing.statements import Statement
+
+from mpt_usage_reporting_extension import pipeline
+from mpt_usage_reporting_extension.context import RunContext
+
+
+@pytest.fixture
+def stub_database(mocker):
+    database = mocker.patch.object(pipeline, "SqliteDatabase").return_value.__aenter__.return_value
+    database.subscription_repository = mocker.Mock(return_value=mocker.AsyncMock())
+    database.agreement_repository = mocker.Mock(return_value=mocker.AsyncMock())
+    return database
+
+
+@pytest.fixture
+def ctx(mocker, run_window):
+    return RunContext(
+        api_service=mocker.MagicMock(),
+        window=run_window,
+        product_ids=("PRD-1",),
+    )
+
+
+async def test_run_reports_selected_statements(mocker, capsys, stub_database, ctx):
+    statements = [
+        Statement({
+            "id": "BILL-1",
+            "status": "Issued",
+            "agreement": {"id": "AGR-1"},
+            "totalPP": 12.5,
+        }),
+        Statement({"id": "BILL-2", "status": "Cancelled"}),
+    ]
+    selector = mocker.patch.object(pipeline, "StatementSelector").return_value
+    selector.select = mocker.AsyncMock(return_value=statements)
+
+    await pipeline.UsageReportingPipeline(ctx).run()  # act
+
+    out = capsys.readouterr().out
+    assert "Selected 2 statement(s)" in out
+    assert "BILL-1" in out
+    assert "Cancelled" in out
+    assert "-" in out  # missing fields render as a dash
+
+
+async def test_run_reports_when_no_statements(mocker, capsys, stub_database, ctx):
+    selector = mocker.patch.object(pipeline, "StatementSelector").return_value
+    selector.select = mocker.AsyncMock(return_value=[])
+
+    await pipeline.UsageReportingPipeline(ctx).run()  # act
+
+    assert "Selected 0 statement(s)" in capsys.readouterr().out

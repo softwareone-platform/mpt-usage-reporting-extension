@@ -1,7 +1,6 @@
 import logging
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation
-from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.persistence.models import Charge
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
@@ -11,33 +10,26 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 logger = logging.getLogger(__name__)
 
 
-class ChargePersister:
+class AccumulationPersister:
     """Upsert each accumulated monthly bucket into both accumulation tables."""
 
-    def persist(
+    def __init__(
         self,
-        ctx: RunContext,
         subscription_repo: SubscriptionAccumulationRepository,
         agreement_repo: AgreementAccumulationRepository,
     ) -> None:
-        """Iterate the run's accumulation buckets and additively upsert each one.
+        self._subscription_repo = subscription_repo
+        self._agreement_repo = agreement_repo
 
-        Reads the accumulated :class:`ChargeTotals` from ``ctx`` and writes every bucket
-        to both the subscription and agreement monthly accumulation tables. Buckets
-        without a billing month are skipped to respect the table CHECK constraints.
+    async def persist(self, accumulations: list[ChargeAccumulation]) -> None:
+        """Additively upsert each accumulation bucket into both monthly tables.
+
+        Buckets without a billing month are skipped to respect the table CHECK constraints.
         """
-        totals = ctx.charge_totals
-        if totals is None:
-            return
-        for bucket in totals.accumulations.values():
-            self._write(bucket, subscription_repo, agreement_repo)
+        for bucket in accumulations:
+            await self._write(bucket)  # noqa: WPS476
 
-    def _write(
-        self,
-        bucket: ChargeAccumulation,
-        subscription_repo: SubscriptionAccumulationRepository,
-        agreement_repo: AgreementAccumulationRepository,
-    ) -> None:
+    async def _write(self, bucket: ChargeAccumulation) -> None:
         if bucket.year is None or bucket.month is None:
             logger.warning(
                 "Skipping persistence for bucket without a billing month "
@@ -54,5 +46,5 @@ class ChargePersister:
             ppx1=bucket.ppx1,
             spx1=bucket.spx1,
         )
-        subscription_repo.accumulate(charge)
-        agreement_repo.accumulate(charge)
+        await self._subscription_repo.accumulate(charge)
+        await self._agreement_repo.accumulate(charge)

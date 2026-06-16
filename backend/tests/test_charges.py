@@ -1,7 +1,7 @@
 from decimal import Decimal
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
-from mpt_usage_reporting_extension.charges import (
+from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
     ChargeReport,
     ChargeStreamer,
@@ -22,51 +22,51 @@ def _charges(api_service):
     return billing.statements.charges
 
 
-async def test_stream_calls_endpoint_per_statement(statement_factory, run_context):
-    run_context.statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
-    stream = _charges(run_context.api_service).return_value.stream
+async def test_stream_calls_endpoint_per_statement(api_service, statement_factory):
+    statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
+    stream = _charges(api_service).return_value.stream
     stream.side_effect = [_aiter([]), _aiter([])]
 
-    await _drain(ChargeStreamer().stream(run_context))  # act
+    await _drain(ChargeStreamer(api_service).stream(statements))  # act
 
-    charges = _charges(run_context.api_service)
+    charges = _charges(api_service)
     assert [call.args[0] for call in charges.call_args_list] == ["BILL-1", "BILL-2"]
 
 
 async def test_stream_attaches_statement_to_each_charge(
-    statement_factory, statement_charge_factory, run_context
+    api_service, statement_factory, statement_charge_factory
 ):
-    run_context.statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
+    statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
     pages = [[statement_charge_factory(), statement_charge_factory()], [statement_charge_factory()]]
-    stream = _charges(run_context.api_service).return_value.stream
+    stream = _charges(api_service).return_value.stream
     stream.side_effect = [_aiter(page) for page in pages]
 
-    result = await _drain(ChargeStreamer().stream(run_context))
+    result = await _drain(ChargeStreamer(api_service).stream(statements))
 
     assert [charge.statement.id for charge in result] == ["BILL-1", "BILL-1", "BILL-2"]
 
 
 async def test_stream_yields_charge_objects(
-    statement_factory, statement_charge_factory, run_context
+    api_service, statement_factory, statement_charge_factory
 ):
-    run_context.statements = [statement_factory("BILL-1")]
+    statements = [statement_factory("BILL-1")]
     charges = [statement_charge_factory(), statement_charge_factory()]
-    stream = _charges(run_context.api_service).return_value.stream
+    stream = _charges(api_service).return_value.stream
     stream.side_effect = [_aiter(charges)]
 
-    result = await _drain(ChargeStreamer().stream(run_context))
+    result = await _drain(ChargeStreamer(api_service).stream(statements))
 
     assert result == charges
 
 
-def test_stream_is_lazy(statement_factory, run_context):
-    run_context.statements = [statement_factory("BILL-1")]
-    stream = _charges(run_context.api_service).return_value.stream
+def test_stream_is_lazy(api_service, statement_factory):
+    statements = [statement_factory("BILL-1")]
+    stream = _charges(api_service).return_value.stream
     stream.side_effect = [_aiter([])]
 
-    ChargeStreamer().stream(run_context)  # act
+    ChargeStreamer(api_service).stream(statements)  # act
 
-    charges = _charges(run_context.api_service)
+    charges = _charges(api_service)
     assert charges.call_count == 0
 
 
