@@ -8,7 +8,6 @@ import aiosqlite
 from mpt_usage_reporting_extension.persistence.models import (
     AgreementMonthlyAccumulation,
     Charge,
-    PriceEstimate,
     SubscriptionMonthlyAccumulation,
 )
 from mpt_usage_reporting_extension.types import Month, Year
@@ -24,7 +23,6 @@ def _where_clause(columns: Iterable[str]) -> str:
     return " AND ".join(f"{column} = :{column}" for column in columns)
 
 
-_ROLLING_MONTHS = 12  # estimate window (trailing yearly PPxY/SPxY) — not the retention window
 _RETENTION_MONTHS = 18  # cleanup keeps this many trailing months (buffer for delayed billing)
 
 
@@ -55,33 +53,11 @@ class _AccumulationEngine:  # noqa: WPS214
             row: sqlite3.Row | None = await cursor.fetchone()
         return row
 
-    async def estimate(self, key_column: str, key_value: str, anchor_ordinal: int) -> PriceEstimate:
-        """Sum the anchor month (PPxM/SPxM) and the trailing window (PPxY/SPxY) in one query."""
-        select_sql = (
-            f"SELECT ppx1, spx1, year * 12 + month AS ordinal FROM {self.table} "  # noqa: S608
-            f"WHERE {key_column} = :key_value "
-            "AND year * 12 + month BETWEEN :start AND :anchor"
-        )
-        bindings = {
-            "key_value": key_value,
-            "start": anchor_ordinal - _ROLLING_MONTHS + 1,
-            "anchor": anchor_ordinal,
-        }
-        async with self.connection.execute(select_sql, bindings) as cursor:
-            rows = await cursor.fetchall()
-        monthly = [row for row in rows if row["ordinal"] == anchor_ordinal]
-        return PriceEstimate(
-            ppxm=sum((Decimal(row["ppx1"]) for row in monthly), Decimal(0)),
-            spxm=sum((Decimal(row["spx1"]) for row in monthly), Decimal(0)),
-            ppxy=sum((Decimal(row["ppx1"]) for row in rows), Decimal(0)),
-            spxy=sum((Decimal(row["spx1"]) for row in rows), Decimal(0)),
-        )
-
     async def delete_before(self, cutoff_ordinal: int) -> int:
         """Delete rows older than the cutoff month ordinal; return the deleted row count."""
         delete_sql = f"DELETE FROM {self.table} WHERE year * 12 + month < :cutoff"  # noqa: S608
         cursor = await self.connection.execute(delete_sql, {"cutoff": cutoff_ordinal})
-        deleted = cursor.rowcount
+        deleted: int = cursor.rowcount
         await cursor.close()
         return deleted
 
@@ -94,6 +70,14 @@ class _AccumulationEngine:  # noqa: WPS214
         async with self.connection.execute(select_sql, {"day": day}) as cursor:
             async for row in cursor:
                 yield row
+
+    async def distinct(self, column: str, **equals: object) -> AsyncIterator[object]:
+        """Yield each distinct value of column, optionally filtered by equals."""
+        clauses = [f"{name} = :{name}" for name in equals]
+        select_sql = self._distinct_sql(column, clauses)
+        async with self.connection.execute(select_sql, equals) as cursor:
+            async for row in cursor:
+                yield row[column]
 
     def _upsert_params(
         self,
@@ -118,8 +102,13 @@ class _AccumulationEngine:  # noqa: WPS214
             "updated_at = excluded.updated_at"
         )
 
+    def _distinct_sql(self, column: str, clauses: list[str]) -> str:
+        where = " AND ".join(clauses)
+        suffix = f" WHERE {where}" if where else ""
+        return f"SELECT DISTINCT {column} FROM {self.table}{suffix} ORDER BY {column}"  # noqa: S608
 
-class SubscriptionAccumulationRepository:
+
+class SubscriptionAccumulationRepository:  # noqa: WPS214
     """SQLite-backed subscription accumulation repository."""
 
     def __init__(
@@ -141,36 +130,11 @@ class SubscriptionAccumulationRepository:
         )
 
     async def get(
-        self,
-        *,
-        subscription_id: str,
-        agreement_id: str,
-        year: Year,
-        month: Month,
+        self, subscription_id: str, year: Year, month: Month
     ) -> SubscriptionMonthlyAccumulation | None:
         """Return the stored subscription bucket, or None when absent."""
-        row = await self.engine.get(
-            subscription_id=subscription_id,
-            agreement_id=agreement_id,
-            year=year,
-            month=month,
-        )
-        if row is None:
-            return None
-        return SubscriptionMonthlyAccumulation(
-            subscription_id=row["subscription_id"],
-            agreement_id=row["agreement_id"],
-            year=row["year"],
-            month=row["month"],
-            ppx1=row["ppx1"],
-            spx1=row["spx1"],
-            updated_at=dt.datetime.fromisoformat(row["updated_at"]),
-        )
-
-    async def estimate(self, subscription_id: str, year: Year, month: Month) -> PriceEstimate:
-        """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the subscription."""
-        anchor = _month_ordinal(year, month)
-        return await self.engine.estimate("subscription_id", subscription_id, anchor)
+        row = await self.engine.get(subscription_id=subscription_id, year=year, month=month)
+        return None if row is None else self._to_bucket(row)
 
     async def prune(self, year: Year, month: Month) -> int:
         """Delete buckets older than the 18-month retention window ending at (year, month)."""
@@ -183,15 +147,26 @@ class SubscriptionAccumulationRepository:
         Lazily streamed; consume while the database connection is open.
         """
         async for row in self.engine.rows_updated_on(updated_on.isoformat()):
-            yield SubscriptionMonthlyAccumulation(
-                subscription_id=row["subscription_id"],
-                agreement_id=row["agreement_id"],
-                year=row["year"],
-                month=row["month"],
-                ppx1=row["ppx1"],
-                spx1=row["spx1"],
-                updated_at=dt.datetime.fromisoformat(row["updated_at"]),
-            )
+            yield self._to_bucket(row)
+
+    async def subscriptions_by_agreement(
+        self, agreement_id: str | None = None
+    ) -> AsyncIterator[str]:
+        """Yield each distinct subscription id currently stored, optionally for one agreement."""
+        equals = {} if agreement_id is None else {"agreement_id": agreement_id}
+        async for subscription_id in self.engine.distinct("subscription_id", **equals):
+            yield str(subscription_id)
+
+    def _to_bucket(self, row: sqlite3.Row) -> SubscriptionMonthlyAccumulation:
+        return SubscriptionMonthlyAccumulation(
+            subscription_id=row["subscription_id"],
+            agreement_id=row["agreement_id"],
+            year=row["year"],
+            month=row["month"],
+            ppx1=row["ppx1"],
+            spx1=row["spx1"],
+            updated_at=dt.datetime.fromisoformat(row["updated_at"]),
+        )
 
 
 class AgreementAccumulationRepository:
@@ -215,29 +190,11 @@ class AgreementAccumulationRepository:
         )
 
     async def get(
-        self,
-        *,
-        agreement_id: str,
-        year: Year,
-        month: Month,
+        self, agreement_id: str, year: Year, month: Month
     ) -> AgreementMonthlyAccumulation | None:
         """Return the stored agreement bucket, or None when absent."""
         row = await self.engine.get(agreement_id=agreement_id, year=year, month=month)
-        if row is None:
-            return None
-        return AgreementMonthlyAccumulation(
-            agreement_id=row["agreement_id"],
-            year=row["year"],
-            month=row["month"],
-            ppx1=row["ppx1"],
-            spx1=row["spx1"],
-            updated_at=dt.datetime.fromisoformat(row["updated_at"]),
-        )
-
-    async def estimate(self, agreement_id: str, year: Year, month: Month) -> PriceEstimate:
-        """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the agreement."""
-        anchor = _month_ordinal(year, month)
-        return await self.engine.estimate("agreement_id", agreement_id, anchor)
+        return None if row is None else self._to_bucket(row)
 
     async def prune(self, year: Year, month: Month) -> int:
         """Delete buckets older than the 18-month retention window ending at (year, month)."""
@@ -250,11 +207,14 @@ class AgreementAccumulationRepository:
         Lazily streamed; consume while the database connection is open.
         """
         async for row in self.engine.rows_updated_on(updated_on.isoformat()):
-            yield AgreementMonthlyAccumulation(
-                agreement_id=row["agreement_id"],
-                year=row["year"],
-                month=row["month"],
-                ppx1=row["ppx1"],
-                spx1=row["spx1"],
-                updated_at=dt.datetime.fromisoformat(row["updated_at"]),
-            )
+            yield self._to_bucket(row)
+
+    def _to_bucket(self, row: sqlite3.Row) -> AgreementMonthlyAccumulation:
+        return AgreementMonthlyAccumulation(
+            agreement_id=row["agreement_id"],
+            year=row["year"],
+            month=row["month"],
+            ppx1=row["ppx1"],
+            spx1=row["spx1"],
+            updated_at=dt.datetime.fromisoformat(row["updated_at"]),
+        )

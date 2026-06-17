@@ -61,9 +61,7 @@ async def test_persist_additive_upsert_is_exact(repos):
 
     await AccumulationPersister(subscription_repo, agreement_repo).persist([bucket])  # act
 
-    stored = await subscription_repo.get(
-        subscription_id="SUB-1", agreement_id="AGR-1", year=2026, month=5
-    )
+    stored = await subscription_repo.get(subscription_id="SUB-1", year=2026, month=5)
     assert stored.ppx1 == Decimal("0.3")
     stored = await agreement_repo.get(agreement_id="AGR-1", year=2026, month=5)
     assert stored.ppx1 == Decimal("0.3")

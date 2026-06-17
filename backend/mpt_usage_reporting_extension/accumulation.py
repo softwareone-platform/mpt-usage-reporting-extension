@@ -5,6 +5,7 @@ from typing import Any, NamedTuple, Self
 
 from mpt_api_client.resources.billing.statement_charges import StatementCharge
 
+from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
 from mpt_usage_reporting_extension.types import Month, Year
 
 _AGREEMENT_ID = "agreement.id"
@@ -12,7 +13,6 @@ _SUBSCRIPTION_ID = "subscription.id"
 _STATEMENT_CANCELLED_AT = "statement.audit.cancelled.at"
 _STATEMENT_ISSUED_AT = "statement.audit.issued.at"
 _UNKNOWN_ID = "-"
-_AGREEMENT_ADDITIONAL = "agreement_additional"
 _UNKNOWN2026_MONTH: tuple[None, None] = (None, None)
 
 
@@ -62,7 +62,7 @@ class AccumulationKey(NamedTuple):
         """
         agreement_id = read_path(charge, _AGREEMENT_ID) or _UNKNOWN_ID
         subscription_id = (
-            read_path(charge, _SUBSCRIPTION_ID) or f"{_AGREEMENT_ADDITIONAL}_{agreement_id}"
+            read_path(charge, _SUBSCRIPTION_ID) or f"{ADDITIONAL_AGREEMENT_PREFIX}{agreement_id}"
         )
         year, month = _year_month(charge)
         return cls(agreement_id, subscription_id, year, month)

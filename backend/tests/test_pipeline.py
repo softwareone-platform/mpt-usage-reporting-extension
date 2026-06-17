@@ -1,6 +1,7 @@
 import datetime as dt
 
 import pytest
+import typer
 from mpt_api_client.resources.billing.statements import Statement
 
 from mpt_usage_reporting_extension import pipeline
@@ -54,6 +55,16 @@ async def test_run_reports_when_no_statements(mocker, capsys, stub_database, ctx
     await pipeline.UsageReportingPipeline(ctx).run()  # act
 
     assert "Selected 0 statement(s)" in capsys.readouterr().out
+
+
+async def test_run_exits_nonzero_when_an_upload_fails(mocker, stub_database, ctx):
+    selector = mocker.patch.object(pipeline, "StatementSelector").return_value
+    selector.select = mocker.AsyncMock(return_value=[])
+    uploader = mocker.patch.object(pipeline, "EstimatesUploader").return_value
+    uploader.update = mocker.AsyncMock(return_value=mocker.Mock(has_failures=True))
+
+    with pytest.raises(typer.Exit):
+        await pipeline.UsageReportingPipeline(ctx).run()  # act
 
 
 async def test_run_prunes_both_accumulation_tables(mocker, stub_database, ctx):

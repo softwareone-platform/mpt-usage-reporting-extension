@@ -21,9 +21,12 @@ The backend is built on the MPT Extension SDK.
 
 ## CLI
 
-`backend/mpt_usage_reporting_extension/cli.py` is a Typer CLI exposed as the
-`mpt-billing-subscription-usage` console script (`pyproject.toml`
-`[project.scripts]` -> `cli:main`). Commands:
+`backend/mpt_usage_reporting_extension/cli/` is a Typer CLI package (one module per command
+under `cli/commands/` — `run.py`, `cleanup.py`, `push_estimates_by_id.py`,
+`push_estimates_by_updated_at.py` — assembled in `cli/_app.py` and re-exported from
+`cli/__init__.py`) exposed as the `mpt-billing-subscription-usage` console script
+(`pyproject.toml` `[project.scripts]` -> `cli:main`). `push-estimates` is a command group with
+`by-id` and `by-updated-at` subcommands. Commands:
 
 - `run` — the main command. Resolves a date window (`--date`, or `--from-date`
   / `--till-date`; defaults to yesterday UTC), then collects, accumulates, and
@@ -85,7 +88,7 @@ See [migrations.md](migrations.md).
 
 | Module | Responsibility |
 |---|---|
-| `cli.py` | Typer CLI entry (`run`) |
+| `cli/` | Typer CLI package — one module per command (`run`, `cleanup`, `push-estimates`) |
 | `pipeline.py` | `UsageReportingPipeline` — orchestrates the end-to-end run |
 | `services/statements.py`, `services/charges.py` | Statement selection and charge streaming from the MPT API |
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |

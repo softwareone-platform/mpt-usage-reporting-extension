@@ -1,5 +1,7 @@
 import datetime as dt
+from collections.abc import Iterable
 
+import typer
 from mpt_api_client.resources.billing.statements import Statement
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation
@@ -19,11 +21,13 @@ from mpt_usage_reporting_extension.services.charges import (
     ChargeReport,
     ChargeStreamer,
 )
-from mpt_usage_reporting_extension.services.statements import StatementReport, StatementSelector
-from mpt_usage_reporting_extension.services.subscription_estimates import (
-    SubscriptionEstimateUpdater,
+from mpt_usage_reporting_extension.services.estimates_uploader import (
+    EstimatesUploader,
+    updatable_subscription_ids,
 )
+from mpt_usage_reporting_extension.services.statements import StatementReport, StatementSelector
 from mpt_usage_reporting_extension.types import Month
+from mpt_usage_reporting_extension.utils import last_month
 
 
 class UsageReportingPipeline:
@@ -51,17 +55,19 @@ class UsageReportingPipeline:
         StatementReport(statements, self._ctx.window).render()
         return statements
 
-    async def _accumulate_charges(self, statements: list[Statement]) -> list[ChargeAccumulation]:
+    async def _accumulate_charges(
+        self, statements: list[Statement]
+    ) -> Iterable[ChargeAccumulation]:
         """Stream and accumulate the statements' charges, then render the charge report."""
         totals = await ChargeAccumulator().accumulate(
             ChargeStreamer(self._ctx.api_service).stream(statements)
         )
         ChargeReport(totals).render()
-        return list(totals.accumulations.values())
+        return totals.accumulations.values()
 
     async def _persist(
         self,
-        accumulations: list[ChargeAccumulation],
+        accumulations: Iterable[ChargeAccumulation],
         subscription_repo: SubscriptionAccumulationRepository,
         agreement_repo: AgreementAccumulationRepository,
     ) -> None:
@@ -70,13 +76,17 @@ class UsageReportingPipeline:
 
     async def _update_estimates(
         self,
-        accumulations: list[ChargeAccumulation],
+        accumulations: Iterable[ChargeAccumulation],
         subscription_repo: SubscriptionAccumulationRepository,
     ) -> None:
-        """PUT the computed price estimates to each real subscription."""
-        await SubscriptionEstimateUpdater(
+        """Upload estimates for the run's subscriptions; exit non-zero on failure."""
+        anchor = last_month(dt.datetime.now(tz=dt.UTC).date())
+        report = await EstimatesUploader(
             subscription_repo, self._ctx.api_service.subscriptions
-        ).update(accumulations)
+        ).update(updatable_subscription_ids(accumulations), anchor.year, Month(anchor.month))
+        report.render()
+        if report.has_failures:
+            raise typer.Exit(code=1)
 
     async def _cleanup(
         self,
