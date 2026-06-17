@@ -1,3 +1,5 @@
+import datetime as dt
+
 from mpt_api_client.resources.billing.statements import Statement
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation
@@ -10,6 +12,7 @@ from mpt_usage_reporting_extension.persistence.sqlite.database import (
     SqliteDatabase,
     resolve_db_path,
 )
+from mpt_usage_reporting_extension.services.accumulation_cleanup import AccumulationCleaner
 from mpt_usage_reporting_extension.services.charge_persistence import AccumulationPersister
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
@@ -20,6 +23,7 @@ from mpt_usage_reporting_extension.services.statements import StatementReport, S
 from mpt_usage_reporting_extension.services.subscription_estimates import (
     SubscriptionEstimateUpdater,
 )
+from mpt_usage_reporting_extension.types import Month
 
 
 class UsageReportingPipeline:
@@ -29,7 +33,7 @@ class UsageReportingPipeline:
         self._ctx = ctx
 
     async def run(self) -> None:
-        """Collect charges, persist them, update subscription estimates, and render the report."""
+        """Collect charges, persist them, update estimates, then prune old rows."""
         async with SqliteDatabase(resolve_db_path()) as db:
             statements = await self._select_statements()
             accumulations = await self._accumulate_charges(statements)
@@ -37,6 +41,7 @@ class UsageReportingPipeline:
                 accumulations, db.subscription_repository(), db.agreement_repository()
             )
             await self._update_estimates(accumulations, db.subscription_repository())
+            await self._cleanup(db.subscription_repository(), db.agreement_repository())
 
     async def _select_statements(self) -> list[Statement]:
         """Select the run window's statements and render the statement report."""
@@ -72,3 +77,14 @@ class UsageReportingPipeline:
         await SubscriptionEstimateUpdater(
             subscription_repo, self._ctx.api_service.subscriptions
         ).update(accumulations)
+
+    async def _cleanup(
+        self,
+        subscription_repo: SubscriptionAccumulationRepository,
+        agreement_repo: AgreementAccumulationRepository,
+    ) -> None:
+        """Prune both tables to the rolling 18-month retention window ending this month (UTC)."""
+        today = dt.datetime.now(tz=dt.UTC).date()
+        await AccumulationCleaner(subscription_repo, agreement_repo).cleanup(
+            today.year, Month(today.month)
+        )

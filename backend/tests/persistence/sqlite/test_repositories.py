@@ -536,3 +536,59 @@ async def test_agreement_updated_returns_buckets(
             updated_at=dt.datetime.fromisoformat("2026-05-07T08:05:00Z"),
         )
     ]
+
+
+async def test_prune_drops_old_subscription_rows(
+    subscription_repo, charge_factory, decimal_first, decimal_zero, subscription_id, agreement_id
+):
+    # Anchor (2026, 6): keep the 18-month window 2025-01..2026-06; drop 2024-12 and older.
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=2024, month=6)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=2024, month=12)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=2025, month=1)
+    )
+
+    result = await subscription_repo.prune(2026, 6)  # act
+
+    assert result == 2
+    assert (
+        await subscription_repo.get(
+            subscription_id=subscription_id, agreement_id=agreement_id, year=2025, month=1
+        )
+        is not None
+    )
+
+
+async def test_prune_keeps_everything_within_window(
+    subscription_repo, charge_factory, decimal_first, decimal_zero
+):
+    # 2025-01 is the oldest month kept by the 18-month window ending (2026, 6).
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=2025, month=1)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=2026, month=6)
+    )
+
+    result = await subscription_repo.prune(2026, 6)  # act
+
+    assert result == 0
+
+
+async def test_prune_drops_old_agreement_rows(
+    agreement_repo, charge_factory, decimal_first, decimal_zero, agreement_id
+):
+    await agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=2024, month=12)
+    )
+    await agreement_repo.accumulate(charge_factory(decimal_first, decimal_zero, year=2026, month=6))
+
+    result = await agreement_repo.prune(2026, 6)  # act
+
+    assert result == 1
+    assert await agreement_repo.get(agreement_id=agreement_id, year=2024, month=12) is None
+    assert await agreement_repo.get(agreement_id=agreement_id, year=2026, month=6) is not None

@@ -33,6 +33,10 @@ class SubscriptionAccumulationRepository(Protocol):
         """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the subscription."""
         ...
 
+    async def prune(self, year: Year, month: Month) -> int:
+        """Delete buckets older than the 18-month retention window ending at (year, month)."""
+        ...
+
     def updated(self, updated_on: dt.date) -> AsyncIterator[SubscriptionMonthlyAccumulation]:
         """Yield the subscription buckets last written on updated_on (streamed)."""
         ...
@@ -57,6 +61,10 @@ class AgreementAccumulationRepository(Protocol):
 
     async def estimate(self, agreement_id: str, year: Year, month: Month) -> PriceEstimate:
         """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the agreement."""
+        ...
+
+    async def prune(self, year: Year, month: Month) -> int:
+        """Delete buckets older than the 18-month retention window ending at (year, month)."""
         ...
 
     def updated(self, updated_on: dt.date) -> AsyncIterator[AgreementMonthlyAccumulation]:

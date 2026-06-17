@@ -1,8 +1,11 @@
+import datetime as dt
+
 import pytest
 from mpt_api_client.resources.billing.statements import Statement
 
 from mpt_usage_reporting_extension import pipeline
 from mpt_usage_reporting_extension.context import RunContext
+from mpt_usage_reporting_extension.types import Month
 
 
 @pytest.fixture
@@ -51,3 +54,16 @@ async def test_run_reports_when_no_statements(mocker, capsys, stub_database, ctx
     await pipeline.UsageReportingPipeline(ctx).run()  # act
 
     assert "Selected 0 statement(s)" in capsys.readouterr().out
+
+
+async def test_run_prunes_both_accumulation_tables(mocker, stub_database, ctx):
+    selector = mocker.patch.object(pipeline, "StatementSelector").return_value
+    selector.select = mocker.AsyncMock(return_value=[])
+    anchor = dt.datetime.now(tz=dt.UTC).date()  # cleanup anchors on the current UTC month
+
+    await pipeline.UsageReportingPipeline(ctx).run()  # act
+
+    subscription_prune = stub_database.subscription_repository.return_value.prune
+    agreement_prune = stub_database.agreement_repository.return_value.prune
+    subscription_prune.assert_awaited_once_with(anchor.year, Month(anchor.month))
+    agreement_prune.assert_awaited_once_with(anchor.year, Month(anchor.month))

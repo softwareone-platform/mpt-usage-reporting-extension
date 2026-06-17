@@ -1,3 +1,5 @@
+import datetime as dt
+
 import pytest
 from typer.testing import CliRunner
 
@@ -15,6 +17,7 @@ def test_cli_help_shows_command(runner):
     assert result.exit_code == 0
     assert "Report MPT billing subscription usage" in result.stdout
     assert "run" in result.stdout
+    assert "cleanup" in result.stdout
 
 
 def test_run_invokes_pipeline(mocker, runner):
@@ -27,6 +30,15 @@ def test_run_invokes_pipeline(mocker, runner):
 
     assert result.exit_code == 0
     pipeline_cls.return_value.run.assert_awaited_once()
+
+
+def test_cleanup_invokes_do_cleanup(mocker, runner):
+    do_cleanup = mocker.patch.object(cli, "do_cleanup")
+
+    result = runner.invoke(cli.app, ["cleanup", "--date", "2026-06-01"])
+
+    assert result.exit_code == 0
+    do_cleanup.assert_awaited_once_with(dt.date(2026, 6, 1))
 
 
 def test_main_invokes_app(mocker):

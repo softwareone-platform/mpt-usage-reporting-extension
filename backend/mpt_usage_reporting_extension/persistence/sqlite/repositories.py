@@ -24,7 +24,8 @@ def _where_clause(columns: Iterable[str]) -> str:
     return " AND ".join(f"{column} = :{column}" for column in columns)
 
 
-_ROLLING_MONTHS = 12
+_ROLLING_MONTHS = 12  # estimate window (trailing yearly PPxY/SPxY) — not the retention window
+_RETENTION_MONTHS = 18  # cleanup keeps this many trailing months (buffer for delayed billing)
 
 
 def _month_ordinal(year: Year, month: Month) -> int:
@@ -32,7 +33,7 @@ def _month_ordinal(year: Year, month: Month) -> int:
     return year * 12 + month  # noqa: WPS432
 
 
-class _AccumulationEngine:
+class _AccumulationEngine:  # noqa: WPS214
     """Generic additive-upsert engine over a single key tuple."""
 
     def __init__(self, connection: aiosqlite.Connection, table: str) -> None:
@@ -75,6 +76,14 @@ class _AccumulationEngine:
             ppxy=sum((Decimal(row["ppx1"]) for row in rows), Decimal(0)),
             spxy=sum((Decimal(row["spx1"]) for row in rows), Decimal(0)),
         )
+
+    async def delete_before(self, cutoff_ordinal: int) -> int:
+        """Delete rows older than the cutoff month ordinal; return the deleted row count."""
+        delete_sql = f"DELETE FROM {self.table} WHERE year * 12 + month < :cutoff"  # noqa: S608
+        cursor = await self.connection.execute(delete_sql, {"cutoff": cutoff_ordinal})
+        deleted = cursor.rowcount
+        await cursor.close()
+        return deleted
 
     async def rows_updated_on(self, day: str) -> AsyncIterator[sqlite3.Row]:
         """Yield rows whose updated_at calendar day equals the ISO day (YYYY-MM-DD), streamed."""
@@ -163,6 +172,11 @@ class SubscriptionAccumulationRepository:
         anchor = _month_ordinal(year, month)
         return await self.engine.estimate("subscription_id", subscription_id, anchor)
 
+    async def prune(self, year: Year, month: Month) -> int:
+        """Delete buckets older than the 18-month retention window ending at (year, month)."""
+        cutoff = _month_ordinal(year, month) - _RETENTION_MONTHS + 1
+        return await self.engine.delete_before(cutoff)
+
     async def updated(self, updated_on: dt.date) -> AsyncIterator[SubscriptionMonthlyAccumulation]:
         """Yield the subscription buckets last written on updated_on (streamed).
 
@@ -224,6 +238,11 @@ class AgreementAccumulationRepository:
         """Current-month (PPxM/SPxM) and trailing-12-month (PPxY/SPxY) sums for the agreement."""
         anchor = _month_ordinal(year, month)
         return await self.engine.estimate("agreement_id", agreement_id, anchor)
+
+    async def prune(self, year: Year, month: Month) -> int:
+        """Delete buckets older than the 18-month retention window ending at (year, month)."""
+        cutoff = _month_ordinal(year, month) - _RETENTION_MONTHS + 1
+        return await self.engine.delete_before(cutoff)
 
     async def updated(self, updated_on: dt.date) -> AsyncIterator[AgreementMonthlyAccumulation]:
         """Yield the agreement buckets last written on updated_on (streamed).
