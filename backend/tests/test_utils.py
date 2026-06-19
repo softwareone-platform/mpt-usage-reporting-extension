@@ -1,5 +1,6 @@
 import datetime as dt
 
+# `utils` is a wemake-blacklisted module name (WPS100); importing from it raises WPS347.
 from mpt_usage_reporting_extension.utils import last_month, to_date  # noqa: WPS347
 
 

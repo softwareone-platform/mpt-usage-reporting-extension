@@ -22,16 +22,16 @@ The backend is built on the MPT Extension SDK.
 ## CLI
 
 `backend/mpt_usage_reporting_extension/cli/` is a Typer CLI package (one module per command
-under `cli/commands/` — `run.py`, `cleanup.py`, `push_estimates_by_id.py`,
-`push_estimates_by_updated_at.py` — assembled in `cli/_app.py` and re-exported from
+under `cli/commands/` — `run.py`, `cleanup.py` — assembled in `cli/_app.py` and re-exported from
 `cli/__init__.py`) exposed as the `mpt-billing-subscription-usage` console script
-(`pyproject.toml` `[project.scripts]` -> `cli:main`). `push-estimates` is a command group with
-`by-id` and `by-updated-at` subcommands. Commands:
+(`pyproject.toml` `[project.scripts]` -> `cli:main`). Commands:
 
 - `run` — the main command. Resolves a date window (`--date`, or `--from-date`
   / `--till-date`; defaults to yesterday UTC), then collects, accumulates, and
   persists usage for that window, and pushes the resulting price estimates back
   to each subscription.
+- `cleanup` — prunes both accumulation tables to the rolling 18-month retention
+  window ending at the given month (`--date`; defaults to the current UTC month).
 
 ### Run data flow
 
@@ -48,12 +48,13 @@ any API work. Each stage is a service constructed with only the dependencies it 
 5. `ChargeAccumulator` (`accumulation.py`) groups charges by
    `AccumulationKey` = `(agreement_id, subscription_id, year, month)` into `ChargeTotals`.
 6. `AccumulationPersister` (`services/charge_persistence.py`) upserts the totals into SQLite.
-7. `SubscriptionEstimateUpdater` (`services/subscription_estimates.py`) reads each real
-   subscription's estimate from SQLite — current calendar-month `PPxM`/`SPxM` and
-   trailing-12-month `PPxY`/`SPxY` sums, anchored on today (UTC) — and concurrently `PUT`s
-   `{"price": {PPxM, SPxM, PPxY, SPxY}}` back to the subscription via the MPT API, skipping
-   synthetic (`agreement_additional_*`) and dateless buckets. It renders a per-subscription
-   report (values + `OK`/`FAILED`) with `[k/N]` progress and exits non-zero on any failure.
+7. `EstimatesUploader` (`services/estimates_uploader.py`) computes each real subscription's
+   estimate from SQLite — current calendar-month `PPxM`/`SPxM` and trailing-12-month
+   `PPxY`/`SPxY` sums, anchored on the previous (latest completed) calendar month — and
+   concurrently `PUT`s `{"price": {PPxM, SPxM, PPxY, SPxY}}` back to the subscription via the
+   MPT API, skipping synthetic (`agreement_additional_*`) and dateless buckets. It renders a
+   per-subscription report (values + `OK`/`FAILED`) with `[k/N]` progress and exits non-zero on
+   any failure.
 
 ## Persistence (SQLite)
 
@@ -88,12 +89,12 @@ See [migrations.md](migrations.md).
 
 | Module | Responsibility |
 |---|---|
-| `cli/` | Typer CLI package — one module per command (`run`, `cleanup`, `push-estimates`) |
+| `cli/` | Typer CLI package — one module per command (`run`, `cleanup`) |
 | `pipeline.py` | `UsageReportingPipeline` — orchestrates the end-to-end run |
 | `services/statements.py`, `services/charges.py` | Statement selection and charge streaming from the MPT API |
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
 | `services/charge_persistence.py`, `persistence/` | Persisting accumulated totals to SQLite |
-| `services/subscription_estimates.py` | `SubscriptionEstimateUpdater` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
+| `services/estimates_uploader.py` | `EstimatesUploader` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
 | `app.py`, `routers/` | Extension event/API/plug routes |
 | `flows/` | Order pipelines and steps |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |

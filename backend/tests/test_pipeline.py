@@ -63,8 +63,10 @@ async def test_run_exits_nonzero_when_an_upload_fails(mocker, stub_database, ctx
     uploader = mocker.patch.object(pipeline, "EstimatesUploader").return_value
     uploader.update = mocker.AsyncMock(return_value=mocker.Mock(has_failures=True))
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(typer.Exit) as exc_info:
         await pipeline.UsageReportingPipeline(ctx).run()  # act
+
+    assert exc_info.value.exit_code == 1
 
 
 async def test_run_prunes_both_accumulation_tables(mocker, stub_database, ctx):
