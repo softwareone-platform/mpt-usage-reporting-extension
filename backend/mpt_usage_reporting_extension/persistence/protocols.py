@@ -3,7 +3,6 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from mpt_usage_reporting_extension.persistence.models import (
-    AgreementMonthlyAccumulation,
     Charge,
     SubscriptionMonthlyAccumulation,
 )
@@ -37,22 +36,12 @@ class SubscriptionAccumulationRepository(Protocol):  # noqa: WPS214
 
 
 class AgreementAccumulationRepository(Protocol):
-    """Persist and read monthly accumulation totals per agreement bucket."""
+    """Persist monthly accumulation totals per agreement bucket."""
 
     async def accumulate(self, charge: Charge) -> None:
         """Additively accumulate the charge into the agreement bucket."""
         ...
 
-    async def get(
-        self, agreement_id: str, year: Year, month: Month
-    ) -> AgreementMonthlyAccumulation | None:
-        """Return the stored agreement bucket, or None when absent."""
-        ...
-
     async def prune(self, year: Year, month: Month) -> int:
         """Delete buckets older than the 18-month retention window ending at (year, month)."""
-        ...
-
-    def updated(self, updated_on: dt.date) -> AsyncIterator[AgreementMonthlyAccumulation]:
-        """Yield the agreement buckets last written on updated_on (streamed)."""
         ...

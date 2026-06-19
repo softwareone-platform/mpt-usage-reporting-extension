@@ -6,7 +6,6 @@ from decimal import Decimal
 import aiosqlite
 
 from mpt_usage_reporting_extension.persistence.models import (
-    AgreementMonthlyAccumulation,
     Charge,
     SubscriptionMonthlyAccumulation,
 )
@@ -189,32 +188,7 @@ class AgreementAccumulationRepository:
             month=charge.month,
         )
 
-    async def get(
-        self, agreement_id: str, year: Year, month: Month
-    ) -> AgreementMonthlyAccumulation | None:
-        """Return the stored agreement bucket, or None when absent."""
-        row = await self.engine.get(agreement_id=agreement_id, year=year, month=month)
-        return None if row is None else self._to_bucket(row)
-
     async def prune(self, year: Year, month: Month) -> int:
         """Delete buckets older than the 18-month retention window ending at (year, month)."""
         cutoff = _month_ordinal(year, month) - _RETENTION_MONTHS + 1
         return await self.engine.delete_before(cutoff)
-
-    async def updated(self, updated_on: dt.date) -> AsyncIterator[AgreementMonthlyAccumulation]:
-        """Yield the agreement buckets last written on updated_on (streamed).
-
-        Lazily streamed; consume while the database connection is open.
-        """
-        async for row in self.engine.rows_updated_on(updated_on.isoformat()):
-            yield self._to_bucket(row)
-
-    def _to_bucket(self, row: sqlite3.Row) -> AgreementMonthlyAccumulation:
-        return AgreementMonthlyAccumulation(
-            agreement_id=row["agreement_id"],
-            year=row["year"],
-            month=row["month"],
-            ppx1=row["ppx1"],
-            spx1=row["spx1"],
-            updated_at=dt.datetime.fromisoformat(row["updated_at"]),
-        )

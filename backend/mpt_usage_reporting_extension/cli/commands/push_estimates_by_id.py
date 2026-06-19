@@ -1,6 +1,6 @@
 import asyncio
 import datetime as dt
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Annotated, Any
@@ -55,37 +55,23 @@ class AgreementSelector:
 Selector = ProductSelector | SellerSelector | SubscriptionSelector | AgreementSelector
 
 
-class _ProductTargetResolver:
-    """Push the product's API subscriptions that have a stored anchor bucket."""
+class _ApiTargetResolver:
+    """Push the API subscriptions of a product or seller that have a stored anchor bucket."""
+
+    def __init__(self, field: str, identifier: Callable[[Any], str]) -> None:
+        self._field = field
+        self._identifier = identifier
 
     async def candidates(
         self,
-        selector: ProductSelector,
+        selector: ProductSelector | SellerSelector,
         repo: SubscriptionAccumulationRepository,
         subscriptions: AsyncSubscriptionsService,
         year: Year,
         month: Month,
     ) -> AsyncIterator[str]:
-        """Stream the product's stored subscription ids."""
-        query = RQLQuery().n("product.id").eq(selector.product_id)
-        async for sub in subscriptions.filter(query).select("id").iterate():
-            if await repo.get(subscription_id=sub.id, year=year, month=month) is not None:
-                yield sub.id
-
-
-class _SellerTargetResolver:
-    """Push the seller's API subscriptions that have a stored anchor bucket."""
-
-    async def candidates(
-        self,
-        selector: SellerSelector,
-        repo: SubscriptionAccumulationRepository,
-        subscriptions: AsyncSubscriptionsService,
-        year: Year,
-        month: Month,
-    ) -> AsyncIterator[str]:
-        """Stream the seller's stored subscription ids."""
-        query = RQLQuery().n("seller.id").eq(selector.seller_id)
+        """Stream the selector's stored subscription ids from the API."""
+        query = RQLQuery().n(self._field).eq(self._identifier(selector))
         async for sub in subscriptions.filter(query).select("id").iterate():
             if await repo.get(subscription_id=sub.id, year=year, month=month) is not None:
                 yield sub.id
@@ -124,8 +110,8 @@ class _AgreementTargetResolver:
 
 
 _RESOLVERS: Mapping[type[Selector], Any] = MappingProxyType({
-    ProductSelector: _ProductTargetResolver(),
-    SellerSelector: _SellerTargetResolver(),
+    ProductSelector: _ApiTargetResolver("product.id", lambda selector: selector.product_id),
+    SellerSelector: _ApiTargetResolver("seller.id", lambda selector: selector.seller_id),
     SubscriptionSelector: _SubscriptionTargetResolver(),
     AgreementSelector: _AgreementTargetResolver(),
 })

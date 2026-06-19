@@ -11,12 +11,32 @@ from mpt_usage_reporting_extension.persistence.models import (
 )
 from mpt_usage_reporting_extension.services.estimates_uploader import (
     EstimatesUploader,
+    EstimateUploadReport,
     PriceEstimateConsumer,
     PriceEstimateProducer,
     UploadOutcome,
     updatable_subscription_ids,
 )
 from mpt_usage_reporting_extension.types import Month
+
+
+class _ConcurrencyTracker:
+    """Records the peak number of in-flight calls; ``track`` is an async-mock side effect.
+
+    Each call holds at a barrier sized to the expected cap, so a full batch of concurrent uploads
+    must arrive together before any is released — making the observed peak deterministic.
+    """
+
+    def __init__(self, parties: int) -> None:
+        self.active = 0
+        self.peak = 0
+        self._gate = asyncio.Barrier(parties)
+
+    async def track(self, *args: object) -> None:
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        await self._gate.wait()
+        self.active -= 1
 
 
 @pytest.fixture
@@ -45,6 +65,16 @@ def update(subscriptions):
 def price_estimate():
     amount = Decimal(1)
     return PriceEstimate(amount, amount, amount, amount)
+
+
+@pytest.fixture
+def estimate():
+    return PriceEstimate(
+        Decimal(5),
+        Decimal(6),
+        Decimal(50),
+        Decimal(60),
+    )
 
 
 @pytest.fixture
@@ -125,13 +155,14 @@ async def test_update_does_nothing_when_empty(updater, update, year, month):
     assert not report.has_failures
 
 
-async def test_update_report_flags_failure(mocker, updater, update, year, month):
+async def test_update_report_flags_failure(mocker, updater, update, year, month, caplog):
     update.side_effect = [MPTError("boom"), mocker.Mock()]
 
     report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
 
     assert report.has_failures
     assert update.call_count == 2
+    assert "Failed to upload subscription SUB-1" in caplog.text
 
 
 async def test_update_report_flags_unexpected_error(mocker, updater, update, year, month):
@@ -193,3 +224,40 @@ async def test_consumer_returns_failure_on_unexpected(subscriptions, update, pri
     assert outcome == UploadOutcome(
         "SUB-1", failed=True, exception=update.side_effect, error="boom"
     )
+
+
+def test_report_renders_values_and_statuses(estimate, capsys):
+    report = EstimateUploadReport(2026, Month.JUNE)
+    report.record(UploadOutcome("SUB-1", estimate=estimate))
+    report.record(UploadOutcome("SUB-2", failed=True, error="boom"))
+
+    report.render()  # act
+
+    out = capsys.readouterr().out
+    assert "Uploaded estimates for 2026-06 to 1 subscription(s), 1 failed" in out
+    assert "SUB-1 PPxM=5.0000 SPxM=6.0000 PPxY=50.0000 SPxY=60.0000 OK" in out
+    assert "SUB-2 FAILED: boom" in out
+
+
+def test_report_summarizes_empty_run(capsys):
+    EstimateUploadReport(2026, Month.JUNE).render()  # act
+
+    assert "Uploaded estimates to 0 subscription(s), 0 failed" in capsys.readouterr().out
+
+
+async def test_update_reports_summary(updater, capsys, year, month):
+    report = await updater.update(["SUB-1", "SUB-2"], year, month)
+    report.render()  # act
+
+    assert "to 2 subscription(s), 0 failed" in capsys.readouterr().out
+
+
+async def test_update_caps_concurrency(subscription_repo, subscriptions, year, month):
+    tracker = _ConcurrencyTracker(parties=2)
+    subscriptions.update.side_effect = tracker.track
+    subscription_ids = [f"SUB-{index}" for index in range(4)]
+
+    updater = EstimatesUploader(subscription_repo, subscriptions, max_concurrency=2)
+    await updater.update(subscription_ids, year, month)  # act
+
+    assert tracker.peak == 2  # 4 subscriptions, capped at 2 (would be 4 without the bound)

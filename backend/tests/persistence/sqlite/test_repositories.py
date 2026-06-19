@@ -6,7 +6,6 @@ from types import MappingProxyType
 import pytest
 
 from mpt_usage_reporting_extension.persistence.models import (
-    AgreementMonthlyAccumulation,
     Charge,
     SubscriptionMonthlyAccumulation,
 )
@@ -106,11 +105,6 @@ def sub_key(subscription_id, year, month):
 
 
 @pytest.fixture
-def agr_key(agreement_id, year, month):
-    return MappingProxyType({"agreement_id": agreement_id, "year": year, "month": month})
-
-
-@pytest.fixture
 def charge_factory(subscription_id, agreement_id, year, month):
     def factory(ppx1, spx1, **overrides):
         fields: dict[str, object] = {
@@ -152,12 +146,12 @@ async def test_accumulate_is_additive_without_drift(subscription_repo, charge_fa
 
 
 async def test_columns_accumulate_independently(
-    agreement_repo, charge_factory, decimal_first, decimal_second, agr_key, decimal_total
+    subscription_repo, charge_factory, decimal_first, decimal_second, sub_key, decimal_total
 ):
-    await agreement_repo.accumulate(charge_factory(decimal_first, decimal_second))
-    await agreement_repo.accumulate(charge_factory(decimal_second, decimal_second))
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_second))
+    await subscription_repo.accumulate(charge_factory(decimal_second, decimal_second))
 
-    result = await agreement_repo.get(**agr_key)
+    result = await subscription_repo.get(**sub_key)
 
     assert result.ppx1 == decimal_total
     assert result.spx1 == Decimal("0.4")
@@ -169,51 +163,50 @@ async def test_get_returns_none_when_absent(subscription_repo, sub_key):
     assert result is None
 
 
-async def test_updated_at_set_on_insert(agreement_repo, charge_factory, decimal_first, agr_key):
-    await agreement_repo.accumulate(charge_factory(decimal_first, decimal_first))
+async def test_updated_at_set_on_insert(subscription_repo, charge_factory, decimal_first, sub_key):
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_first))
 
-    result = await agreement_repo.get(**agr_key)
+    result = await subscription_repo.get(**sub_key)
 
     assert isinstance(result.updated_at, dt.datetime)
     assert result.updated_at.tzinfo is not None
 
 
 async def test_updated_at_refreshed_on_second_write(
-    agreement_repo, mocker, charge_factory, decimal_first, agr_key
+    subscription_repo, mocker, charge_factory, decimal_first, sub_key
 ):
     first_write = "2026-05-07T08:05:00Z"
     second_write = "2026-05-08T09:06:00Z"
     mocker.patch.object(repositories, "utc_now_iso", side_effect=[first_write, second_write])
-    await agreement_repo.accumulate(charge_factory(decimal_first, decimal_first))
-    await agreement_repo.accumulate(charge_factory(decimal_first, decimal_first))
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_first))
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_first))
 
-    result = await agreement_repo.get(**agr_key)
+    result = await subscription_repo.get(**sub_key)
 
     assert result.updated_at == dt.datetime.fromisoformat(second_write)
 
 
-async def test_agreement_key_distinguishes_month(
-    agreement_repo,
+async def test_key_distinguishes_month(
+    subscription_repo,
     charge_factory,
     decimal_first,
     decimal_second,
     decimal_zero,
+    subscription_id,
     year,
     month,
     other_month,
 ):
-    await agreement_repo.accumulate(
-        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1", month=month)
-    )
-    await agreement_repo.accumulate(
-        charge_factory(decimal_second, decimal_zero, agreement_id="AGR-1", month=other_month)
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero, month=month))
+    await subscription_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, month=other_month)
     )
 
-    result = await agreement_repo.get(agreement_id="AGR-1", year=year, month=month)
+    result = await subscription_repo.get(subscription_id=subscription_id, year=year, month=month)
 
     assert result.ppx1 == decimal_first
     assert (
-        await agreement_repo.get(agreement_id="AGR-1", year=year, month=other_month)
+        await subscription_repo.get(subscription_id=subscription_id, year=year, month=other_month)
     ).ppx1 == decimal_second
 
 
@@ -229,16 +222,6 @@ async def test_invalid_year_is_rejected(agreement_repo, charge_factory, decimal_
         await agreement_repo.accumulate(
             charge_factory(decimal_first, decimal_first, agreement_id="AGR-1", year=bad_year)
         )  # act
-
-
-async def test_tables_are_independent(
-    subscription_repo, agreement_repo, charge_factory, decimal_first, agr_key
-):
-    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_first))
-
-    result = await agreement_repo.get(**agr_key)
-
-    assert result is None
 
 
 def test_utc_now_iso_is_z_suffixed_utc():
@@ -480,26 +463,6 @@ async def test_subscriptions_by_agreement_empty(subscription_repo):
     assert not result
 
 
-async def test_agreement_updated_returns_buckets(
-    agreement_repo, mocker, charge_factory, decimal_first, decimal_zero, agreement_id, year, month
-):
-    mocker.patch.object(repositories, "utc_now_iso", return_value="2026-05-07T08:05:00Z")
-    await agreement_repo.accumulate(charge_factory(decimal_first, decimal_zero))
-
-    result = [stored async for stored in agreement_repo.updated(dt.date(2026, 5, 7))]  # act
-
-    assert result == [
-        AgreementMonthlyAccumulation(
-            agreement_id=agreement_id,
-            year=year,
-            month=month,
-            ppx1=decimal_first,
-            spx1=decimal_zero,
-            updated_at=dt.datetime.fromisoformat("2026-05-07T08:05:00Z"),
-        )
-    ]
-
-
 async def test_prune_drops_old_subscription_rows(
     subscription_repo, charge_factory, decimal_first, decimal_zero, subscription_id
 ):
@@ -536,18 +499,3 @@ async def test_prune_keeps_everything_within_window(
     result = await subscription_repo.prune(2026, 6)  # act
 
     assert result == 0
-
-
-async def test_prune_drops_old_agreement_rows(
-    agreement_repo, charge_factory, decimal_first, decimal_zero, agreement_id
-):
-    await agreement_repo.accumulate(
-        charge_factory(decimal_first, decimal_zero, year=2024, month=12)
-    )
-    await agreement_repo.accumulate(charge_factory(decimal_first, decimal_zero, year=2026, month=6))
-
-    result = await agreement_repo.prune(2026, 6)  # act
-
-    assert result == 1
-    assert await agreement_repo.get(agreement_id=agreement_id, year=2024, month=12) is None
-    assert await agreement_repo.get(agreement_id=agreement_id, year=2026, month=6) is not None
