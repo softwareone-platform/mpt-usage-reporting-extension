@@ -78,11 +78,15 @@ class StatementSelector:
 
     async def select(
         self,
-        window: RunWindow,
+        window: RunWindow | None,
         product_ids: tuple[str, ...],
         seller_id: str,
     ) -> list[Statement]:
-        """Select statements issued or cancelled within the window, merged by id."""
+        """Select statements issued or cancelled within the window, merged by id.
+
+        A ``None`` window drops the date filter and selects every issued/cancelled statement
+        for the scope (used by a full ``recalculate`` rebuild).
+        """
         statements = self._api_service.client.billing.statements
         merged: dict[str, Statement] = {}
         for audit_field, status in _PASSES:
@@ -107,19 +111,14 @@ class StatementFilterBuilder:
         self,
         product_ids: Iterable[str],
         seller_id: str,
-        window: RunWindow,
+        window: RunWindow | None,
         audit_field: str,
         status: str,
     ) -> RQLQuery:
         """Build the full statement filter for a single audit/status pass."""
-        query = (
-            self._base_statement_filter(product_ids, seller_id)
-            & self._status_filter(status)
-            & self._field_window(
-                audit_field,
-                window,
-            )
-        )
+        query = self._base_statement_filter(product_ids, seller_id) & self._status_filter(status)
+        if window is not None:
+            query &= self._field_window(audit_field, window)
         logger.info("Selecting %s statements by %s with RQL: %s", status, audit_field, query)
         return query
 
@@ -156,18 +155,23 @@ class StatementFilterBuilder:
 class StatementReport:
     """Render the statements selected by a run as a console table."""
 
-    def __init__(self, statements: list[Statement], window: RunWindow) -> None:
+    def __init__(self, statements: list[Statement], window: RunWindow | None) -> None:
         self._statements = statements
         self._window = window
 
     def render(self) -> None:
         """Print the run summary line and, when statements were selected, the table."""
-        start = self._window.start.strftime("%Y-%m-%d")
-        end = self._window.end.strftime("%Y-%m-%d")
         count = len(self._statements)
-        typer.echo(f"Selected {count} statement(s) for {start}..{end}")
+        typer.echo(f"Selected {count} statement(s){self._span()}")
         if self._statements:
             Console().print(self._table())
+
+    def _span(self) -> str:
+        if self._window is None:
+            return ""
+        start = self._window.start.strftime("%Y-%m-%d")
+        end = self._window.end.strftime("%Y-%m-%d")
+        return f" for {start}..{end}"
 
     def _table(self) -> Table:
         table = Table(*_REPORT_HEADERS)

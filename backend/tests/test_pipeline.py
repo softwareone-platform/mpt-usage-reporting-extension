@@ -6,6 +6,7 @@ from mpt_api_client.resources.billing.statements import Statement
 
 from mpt_usage_reporting_extension import pipeline
 from mpt_usage_reporting_extension.context import RunContext
+from mpt_usage_reporting_extension.selectors import ProductSelector
 from mpt_usage_reporting_extension.types import Month
 
 
@@ -80,3 +81,29 @@ async def test_run_prunes_both_accumulation_tables(mocker, stub_database, ctx):
     agreement_prune = stub_database.agreement_repository.return_value.prune
     subscription_prune.assert_awaited_once_with(anchor.year, Month(anchor.month))
     agreement_prune.assert_awaited_once_with(anchor.year, Month(anchor.month))
+
+
+async def test_recalculate_resets_and_skips_prune(mocker, stub_database, ctx):
+    selector = mocker.patch.object(pipeline, "StatementSelector").return_value
+    selector.select = mocker.AsyncMock(return_value=[])
+    cleaner = mocker.patch.object(pipeline, "BucketCleaner").return_value
+    cleaner.clean = mocker.AsyncMock()
+
+    await pipeline.UsageReportingPipeline(ctx).recalculate(None)  # act
+
+    # a None scope is expanded to the configured products, not a global wipe
+    cleaner.clean.assert_awaited_once_with(ProductSelector("PRD-1"))
+    stub_database.subscription_repository.return_value.prune.assert_not_called()
+    stub_database.agreement_repository.return_value.prune.assert_not_called()
+
+
+async def test_recalculate_cleans_the_given_scope(mocker, stub_database, ctx):
+    selector = mocker.patch.object(pipeline, "StatementSelector").return_value
+    selector.select = mocker.AsyncMock(return_value=[])
+    cleaner = mocker.patch.object(pipeline, "BucketCleaner").return_value
+    cleaner.clean = mocker.AsyncMock()
+    scope = ProductSelector("PRD-9")
+
+    await pipeline.UsageReportingPipeline(ctx).recalculate(scope)  # act
+
+    cleaner.clean.assert_awaited_once_with(scope)

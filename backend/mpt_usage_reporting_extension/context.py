@@ -10,6 +10,6 @@ class RunContext:
     """The inputs for a single statement-selection run."""
 
     api_service: MPTAPIService
-    window: RunWindow
+    window: RunWindow | None
     product_ids: tuple[str, ...]
     seller_id: str = ""

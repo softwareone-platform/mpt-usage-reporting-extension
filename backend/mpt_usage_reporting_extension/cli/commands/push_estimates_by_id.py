@@ -1,7 +1,6 @@
 import asyncio
 import datetime as dt
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from typing import Annotated, assert_never
 
 import typer
@@ -18,40 +17,17 @@ from mpt_usage_reporting_extension.persistence.sqlite.database import (
     SqliteDatabase,
     resolve_db_path,
 )
+from mpt_usage_reporting_extension.selectors import (
+    AgreementSelector,
+    ProductSelector,
+    Selector,
+    SellerSelector,
+    SubscriptionSelector,
+    build_selector,
+)
 from mpt_usage_reporting_extension.services.estimates_uploader import EstimatesUploader
 from mpt_usage_reporting_extension.types import Month
 from mpt_usage_reporting_extension.utils import last_month
-
-
-@dataclass(frozen=True, slots=True)
-class ProductSelector:
-    """Push every stored subscription of one product."""
-
-    product_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class SellerSelector:
-    """Push every stored subscription of one seller."""
-
-    seller_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class SubscriptionSelector:
-    """Push one stored subscription."""
-
-    subscription_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class AgreementSelector:
-    """Push every stored subscription of one agreement."""
-
-    agreement_id: str
-
-
-Selector = ProductSelector | SellerSelector | SubscriptionSelector | AgreementSelector
 
 
 class _ApiTargetResolver:
@@ -142,7 +118,7 @@ def push_estimates_by_id(
     ] = None,
 ) -> None:
     """Recompute price estimates from stored usage and upload them — no statement download."""
-    selector = _build_selector(
+    selector = build_selector(
         product_id=product_id,
         agreement_id=agreement_id,
         subscription_id=subscription_id,
@@ -165,25 +141,3 @@ async def _push_estimates_by_id(api_service: MPTAPIService, selector: Selector) 
     report.render()
     if report.has_failures:
         raise typer.Exit(code=1)
-
-
-def _build_selector(
-    *,
-    product_id: str | None,
-    agreement_id: str | None,
-    subscription_id: str | None,
-    seller_id: str | None,
-) -> Selector:
-    """Build the single target selector from the flags, or fail when the combination is invalid."""
-    factories = (
-        (product_id, ProductSelector),
-        (agreement_id, AgreementSelector),
-        (subscription_id, SubscriptionSelector),
-        (seller_id, SellerSelector),
-    )
-    selectors = [build(flag) for flag, build in factories if flag is not None]
-    if len(selectors) != 1:
-        raise typer.BadParameter(
-            "Use exactly one of --product-id / --agreement-id / --subscription-id / --seller-id."
-        )
-    return selectors[0]

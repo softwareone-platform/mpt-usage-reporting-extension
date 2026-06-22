@@ -14,7 +14,9 @@ from mpt_usage_reporting_extension.persistence.sqlite.database import (
     SqliteDatabase,
     resolve_db_path,
 )
+from mpt_usage_reporting_extension.selectors import ProductSelector, Selector
 from mpt_usage_reporting_extension.services.accumulation_cleanup import AccumulationCleaner
+from mpt_usage_reporting_extension.services.bucket_clean import BucketCleaner
 from mpt_usage_reporting_extension.services.charge_persistence import AccumulationPersister
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
@@ -30,7 +32,7 @@ from mpt_usage_reporting_extension.types import Month
 from mpt_usage_reporting_extension.utils import last_month
 
 
-class UsageReportingPipeline:
+class UsageReportingPipeline:  # noqa: WPS214
     """Run the end-to-end billing usage reporting pipeline for one run."""
 
     def __init__(self, ctx: RunContext) -> None:
@@ -46,6 +48,40 @@ class UsageReportingPipeline:
             )
             await self._update_estimates(accumulations, db.subscription_repository())
             await self._cleanup(db.subscription_repository(), db.agreement_repository())
+
+    async def recalculate(self, scope: Selector | None) -> None:
+        """Reset the scope's buckets, then re-accumulate its statements and push estimates.
+
+        Unlike ``run`` (additive), the scope's buckets are deleted before re-accumulation, so
+        re-runs do not double-count. The re-fill selects all of the scope's statements (no date
+        window). Retention pruning is skipped.
+        """
+        async with SqliteDatabase(resolve_db_path()) as db:
+            await self._reset(scope, db)
+            statements = await self._select_statements()
+            accumulations = await self._accumulate_charges(statements)
+            await self._persist(
+                accumulations, db.subscription_repository(), db.agreement_repository()
+            )
+            await self._update_estimates(accumulations, db.subscription_repository())
+
+    async def _reset(self, scope: Selector | None, db: SqliteDatabase) -> None:
+        """Delete the scope's stored buckets before re-accumulation.
+
+        A ``None`` scope is expanded to the run's configured products, so the reset matches the
+        re-fill's product scope instead of wiping buckets of unrelated products.
+        """
+        api_service = self._ctx.api_service
+        cleaner = BucketCleaner(
+            db.subscription_repository(),
+            db.agreement_repository(),
+            api_service.client.commerce.subscriptions,
+        )
+        if scope is not None:
+            await cleaner.clean(scope)
+            return
+        for product_id in self._ctx.product_ids:
+            await cleaner.clean(ProductSelector(product_id))  # noqa: WPS476
 
     async def _select_statements(self) -> list[Statement]:
         """Select the run window's statements and render the statement report."""

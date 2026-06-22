@@ -22,9 +22,9 @@ The backend is built on the MPT Extension SDK.
 ## CLI
 
 `backend/mpt_usage_reporting_extension/cli/` is a Typer CLI package (one module per command
-under `cli/commands/` — `run.py`, `cleanup.py` — assembled in `cli/_app.py` and re-exported from
-`cli/__init__.py`) exposed as the `mpt-billing-subscription-usage` console script
-(`pyproject.toml` `[project.scripts]` -> `cli:main`). Commands:
+under `cli/commands/`, assembled in `cli/_app.py` and re-exported from `cli/__init__.py`) exposed
+as the `mpt-billing-subscription-usage` console script (`pyproject.toml` `[project.scripts]` ->
+`cli:main`). Commands:
 
 - `run` — the main command. Resolves a date window (`--date`, or `--from-date`
   / `--till-date`; defaults to yesterday UTC), then collects, accumulates, and
@@ -32,6 +32,19 @@ under `cli/commands/` — `run.py`, `cleanup.py` — assembled in `cli/_app.py` 
   to each subscription.
 - `cleanup` — prunes both accumulation tables to the rolling 18-month retention
   window ending at the given month (`--date`; defaults to the current UTC month).
+- `push-estimates by-id` / `push-estimates by-updated-at` — recompute and push estimates
+  from already-stored usage (no statement download), selected by id or by write date.
+- `delete` — delete **all** stored accumulation buckets for one scope (exactly one of
+  `--product-id` / `--agreement-id` / `--subscription-id` / `--seller-id`).
+  `--product-id`/`--seller-id` are resolved to their agreements via the commerce API and clear both
+  tables by `agreement_id`; `--subscription-id` clears only that subscription's buckets (the shared
+  agreement bucket aggregates its siblings). See `services/bucket_clean.py` (`BucketCleaner`).
+- `recalculate` — rebuild a scope idempotently: `delete` the scope's buckets, then run the normal
+  fill (select -> accumulate -> persist -> push estimates) so re-runs do not double-count. Optional
+  `--product-id` / `--seller-id` (none = all configured products); no date window — the re-fill
+  selects **all** of the scope's statements (`StatementSelector` omits the date filter when given a
+  `None` window). Retention pruning is skipped; `pipeline.recalculate` reuses every `run` stage and
+  adds only the reset step.
 
 ### Run data flow
 
@@ -89,11 +102,12 @@ See [migrations.md](migrations.md).
 
 | Module | Responsibility |
 |---|---|
-| `cli/` | Typer CLI package — one module per command (`run`, `cleanup`) |
-| `pipeline.py` | `UsageReportingPipeline` — orchestrates the end-to-end run |
+| `cli/` | Typer CLI package — one module per command (`run`, `cleanup`, `delete`, `recalculate`, `push-estimates`) |
+| `pipeline.py` | `UsageReportingPipeline` — orchestrates the end-to-end `run` and `recalculate` |
+| `selectors.py` | `--product-id`/`--agreement-id`/`--subscription-id`/`--seller-id` selectors, shared by `delete`, `recalculate`, and `push-estimates` |
 | `services/statements.py`, `services/charges.py` | Statement selection and charge streaming from the MPT API |
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
-| `services/charge_persistence.py`, `persistence/` | Persisting accumulated totals to SQLite |
+| `services/charge_persistence.py`, `services/bucket_clean.py`, `persistence/` | Persisting accumulated totals to SQLite and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
 | `app.py`, `routers/` | Extension event/API/plug routes |
 | `flows/` | Order pipelines and steps |
