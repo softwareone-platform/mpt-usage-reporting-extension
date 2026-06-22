@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Iterable
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation
 from mpt_usage_reporting_extension.persistence.models import Charge
@@ -21,7 +22,7 @@ class AccumulationPersister:
         self._subscription_repo = subscription_repo
         self._agreement_repo = agreement_repo
 
-    async def persist(self, accumulations: list[ChargeAccumulation]) -> None:
+    async def persist(self, accumulations: Iterable[ChargeAccumulation]) -> None:
         """Additively upsert each accumulation bucket into both monthly tables.
 
         Buckets without a billing month are skipped to respect the table CHECK constraints.

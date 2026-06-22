@@ -19,18 +19,6 @@ class SubscriptionMonthlyAccumulation:
 
 
 @dataclass(frozen=True, slots=True)
-class AgreementMonthlyAccumulation:
-    """Accumulated monthly usage totals for a single agreement bucket."""
-
-    agreement_id: str
-    year: Year
-    month: Month
-    ppx1: Decimal
-    spx1: Decimal
-    updated_at: dt.datetime
-
-
-@dataclass(frozen=True, slots=True)
 class Charge:
     """A single charge to accumulate into the monthly buckets."""
 
