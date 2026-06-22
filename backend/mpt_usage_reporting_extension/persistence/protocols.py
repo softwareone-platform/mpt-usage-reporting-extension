@@ -9,7 +9,7 @@ from mpt_usage_reporting_extension.persistence.models import (
 from mpt_usage_reporting_extension.types import Month, Year
 
 
-class SubscriptionAccumulationRepository(Protocol):
+class SubscriptionAccumulationRepository(Protocol):  # noqa: WPS214
     """Read and write monthly accumulation totals per subscription bucket."""
 
     async def accumulate(self, charge: Charge) -> None:
@@ -28,6 +28,10 @@ class SubscriptionAccumulationRepository(Protocol):
 
     def updated(self, updated_on: dt.date) -> AsyncIterator[SubscriptionMonthlyAccumulation]:
         """Yield the subscription buckets last written on updated_on (streamed)."""
+        ...
+
+    def subscriptions_by_agreement(self, agreement_id: str | None = None) -> AsyncIterator[str]:
+        """Yield each distinct subscription id currently stored, optionally for one agreement."""
         ...
 
 

@@ -89,6 +89,9 @@ per-file-ignores = [
   "*tests/**:WPS202,WPS432,WPS211",
   # `utils` is a wemake-blacklisted module name, but it's the agreed home for shared helpers.
   "*utils.py:WPS100",
+  # The push-estimates command co-locates its selectors and one resolver class per selector.
+  # Scope to the source path so it doesn't shadow the `*tests/**` ignores on the test module.
+  "*cli/commands/push_estimates_by_id.py:WPS202",
 ]
 
 [tool.ruff]

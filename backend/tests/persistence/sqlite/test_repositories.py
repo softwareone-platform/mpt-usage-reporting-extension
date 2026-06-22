@@ -412,6 +412,57 @@ async def test_updated_excludes_other_dates(
     assert result == []
 
 
+async def test_subscriptions_by_agreement_one_per_id(
+    subscription_repo, charge_factory, decimal_first, decimal_zero, other_month
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", agreement_id="AGR-1")
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-2", agreement_id="AGR-2")
+    )
+
+    result = [sub async for sub in subscription_repo.subscriptions_by_agreement()]  # act
+
+    assert sorted(result) == ["SUB-1", "SUB-2"]
+
+
+async def test_subscriptions_by_agreement_dedupes(
+    subscription_repo, charge_factory, decimal_first, decimal_zero, month, other_month
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", month=month)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", month=other_month)
+    )
+
+    result = [sub async for sub in subscription_repo.subscriptions_by_agreement()]  # act
+
+    assert result == ["SUB-1"]
+
+
+async def test_subscriptions_by_agreement_filters(
+    subscription_repo, charge_factory, decimal_first, decimal_zero
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", agreement_id="AGR-1")
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-2", agreement_id="AGR-2")
+    )
+
+    result = [sub async for sub in subscription_repo.subscriptions_by_agreement("AGR-1")]  # act
+
+    assert result == ["SUB-1"]
+
+
+async def test_subscriptions_by_agreement_empty(subscription_repo):
+    result = [sub async for sub in subscription_repo.subscriptions_by_agreement()]  # act
+
+    assert not result
+
+
 async def test_prune_drops_old_subscription_rows(
     subscription_repo, charge_factory, decimal_first, decimal_zero, subscription_id
 ):
