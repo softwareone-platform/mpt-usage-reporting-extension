@@ -70,6 +70,14 @@ class _AccumulationEngine:  # noqa: WPS214
             async for row in cursor:
                 yield row
 
+    async def distinct(self, column: str, **equals: object) -> AsyncIterator[object]:
+        """Yield each distinct value of column, optionally filtered by equals."""
+        clauses = [f"{name} = :{name}" for name in equals]
+        select_sql = self._distinct_sql(column, clauses)
+        async with self.connection.execute(select_sql, equals) as cursor:
+            async for row in cursor:
+                yield row[column]
+
     def _upsert_params(
         self,
         *,
@@ -93,8 +101,13 @@ class _AccumulationEngine:  # noqa: WPS214
             "updated_at = excluded.updated_at"
         )
 
+    def _distinct_sql(self, column: str, clauses: list[str]) -> str:
+        where = " AND ".join(clauses)
+        suffix = f" WHERE {where}" if where else ""
+        return f"SELECT DISTINCT {column} FROM {self.table}{suffix} ORDER BY {column}"  # noqa: S608
 
-class SubscriptionAccumulationRepository:
+
+class SubscriptionAccumulationRepository:  # noqa: WPS214
     """SQLite-backed subscription accumulation repository."""
 
     def __init__(
@@ -134,6 +147,14 @@ class SubscriptionAccumulationRepository:
         """
         async for row in self.engine.rows_updated_on(updated_on.isoformat()):
             yield self._to_bucket(row)
+
+    async def subscriptions_by_agreement(
+        self, agreement_id: str | None = None
+    ) -> AsyncIterator[str]:
+        """Yield each distinct subscription id currently stored, optionally for one agreement."""
+        equals = {} if agreement_id is None else {"agreement_id": agreement_id}
+        async for subscription_id in self.engine.distinct("subscription_id", **equals):
+            yield str(subscription_id)
 
     def _to_bucket(self, row: sqlite3.Row) -> SubscriptionMonthlyAccumulation:
         return SubscriptionMonthlyAccumulation(
