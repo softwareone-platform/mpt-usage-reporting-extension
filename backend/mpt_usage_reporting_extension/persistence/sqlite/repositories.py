@@ -10,6 +10,7 @@ from mpt_usage_reporting_extension.persistence.models import (
     SubscriptionMonthlyAccumulation,
 )
 from mpt_usage_reporting_extension.types import Month, Year
+from mpt_usage_reporting_extension.utils import month_ordinal  # noqa: WPS347
 
 
 def utc_now_iso() -> str:
@@ -23,11 +24,6 @@ def _where_clause(columns: Iterable[str]) -> str:
 
 
 _RETENTION_MONTHS = 18  # cleanup keeps this many trailing months (buffer for delayed billing)
-
-
-def _month_ordinal(year: Year, month: Month) -> int:
-    """Map a (year, month) pair to a single comparable month ordinal."""
-    return year * 12 + month  # noqa: WPS432
 
 
 class _AccumulationEngine:  # noqa: WPS214
@@ -56,6 +52,15 @@ class _AccumulationEngine:  # noqa: WPS214
         """Delete rows older than the cutoff month ordinal; return the deleted row count."""
         delete_sql = f"DELETE FROM {self.table} WHERE year * 12 + month < :cutoff"  # noqa: S608
         cursor = await self.connection.execute(delete_sql, {"cutoff": cutoff_ordinal})
+        deleted: int = cursor.rowcount
+        await cursor.close()
+        return deleted
+
+    async def delete(self, **equals: object) -> int:
+        """Delete rows matching the equals filter; with no filter, delete every row."""
+        suffix = f" WHERE {_where_clause(equals)}" if equals else ""
+        delete_sql = f"DELETE FROM {self.table}{suffix}"  # noqa: S608
+        cursor = await self.connection.execute(delete_sql, equals)
         deleted: int = cursor.rowcount
         await cursor.close()
         return deleted
@@ -137,8 +142,19 @@ class SubscriptionAccumulationRepository:  # noqa: WPS214
 
     async def prune(self, year: Year, month: Month) -> int:
         """Delete buckets older than the 18-month retention window ending at (year, month)."""
-        cutoff = _month_ordinal(year, month) - _RETENTION_MONTHS + 1
+        cutoff = month_ordinal(year, month) - _RETENTION_MONTHS + 1
         return await self.engine.delete_before(cutoff)
+
+    async def delete(
+        self, *, subscription_id: str | None = None, agreement_id: str | None = None
+    ) -> int:
+        """Delete subscription buckets for the given scope (no scope deletes every bucket)."""
+        equals: dict[str, object] = {}
+        if subscription_id is not None:
+            equals["subscription_id"] = subscription_id
+        if agreement_id is not None:
+            equals["agreement_id"] = agreement_id
+        return await self.engine.delete(**equals)
 
     async def updated(self, updated_on: dt.date) -> AsyncIterator[SubscriptionMonthlyAccumulation]:
         """Yield the subscription buckets last written on updated_on (streamed).
@@ -190,5 +206,10 @@ class AgreementAccumulationRepository:
 
     async def prune(self, year: Year, month: Month) -> int:
         """Delete buckets older than the 18-month retention window ending at (year, month)."""
-        cutoff = _month_ordinal(year, month) - _RETENTION_MONTHS + 1
+        cutoff = month_ordinal(year, month) - _RETENTION_MONTHS + 1
         return await self.engine.delete_before(cutoff)
+
+    async def delete(self, *, agreement_id: str | None = None) -> int:
+        """Delete agreement buckets for the given scope (no scope deletes every bucket)."""
+        equals = {} if agreement_id is None else {"agreement_id": agreement_id}
+        return await self.engine.delete(**equals)

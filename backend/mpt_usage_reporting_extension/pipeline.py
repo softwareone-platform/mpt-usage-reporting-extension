@@ -14,7 +14,9 @@ from mpt_usage_reporting_extension.persistence.sqlite.database import (
     SqliteDatabase,
     resolve_db_path,
 )
+from mpt_usage_reporting_extension.selectors import ProductSelector, Selector
 from mpt_usage_reporting_extension.services.accumulation_cleanup import AccumulationCleaner
+from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter
 from mpt_usage_reporting_extension.services.charge_persistence import AccumulationPersister
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
@@ -30,7 +32,7 @@ from mpt_usage_reporting_extension.types import Month
 from mpt_usage_reporting_extension.utils import last_month
 
 
-class UsageReportingPipeline:
+class UsageReportingPipeline:  # noqa: WPS214
     """Run the end-to-end billing usage reporting pipeline for one run."""
 
     def __init__(self, ctx: RunContext) -> None:
@@ -39,13 +41,44 @@ class UsageReportingPipeline:
     async def run(self) -> None:
         """Collect charges, persist them, update estimates, then prune old rows."""
         async with SqliteDatabase(resolve_db_path()) as db:
-            statements = await self._select_statements()
-            accumulations = await self._accumulate_charges(statements)
-            await self._persist(
-                accumulations, db.subscription_repository(), db.agreement_repository()
-            )
-            await self._update_estimates(accumulations, db.subscription_repository())
-            await self._cleanup(db.subscription_repository(), db.agreement_repository())
+            await self._run(db)
+
+    async def recalculate(self, scope: Selector | None) -> None:
+        """Delete the scope's buckets, then perform a regular run.
+
+        Unlike ``run`` (additive), the scope's buckets are deleted first, so re-runs do not
+        double-count. The re-fill selects all of the scope's statements (no date window). After
+        the delete it runs the regular pipeline, including retention pruning.
+        """
+        async with SqliteDatabase(resolve_db_path()) as db:
+            await self._reset(scope, db)
+            await self._run(db)
+
+    async def _run(self, db: SqliteDatabase) -> None:
+        """Collect charges, persist them, update estimates, then prune old rows."""
+        statements = await self._select_statements()
+        accumulations = await self._accumulate_charges(statements)
+        await self._persist(accumulations, db.subscription_repository(), db.agreement_repository())
+        await self._update_estimates(accumulations, db.subscription_repository())
+        await self._cleanup(db.subscription_repository(), db.agreement_repository())
+
+    async def _reset(self, scope: Selector | None, db: SqliteDatabase) -> None:
+        """Delete the scope's stored buckets before re-accumulation.
+
+        A ``None`` scope is expanded to the run's configured products, so the reset matches the
+        re-fill's product scope instead of wiping buckets of unrelated products.
+        """
+        api_service = self._ctx.api_service
+        deleter = BucketDeleter(
+            db.subscription_repository(),
+            db.agreement_repository(),
+            api_service.client.commerce.subscriptions,
+        )
+        if scope is not None:
+            await deleter.delete(scope)
+            return
+        for product_id in self._ctx.product_ids:
+            await deleter.delete(ProductSelector(product_id))  # noqa: WPS476
 
     async def _select_statements(self) -> list[Statement]:
         """Select the run window's statements and render the statement report."""

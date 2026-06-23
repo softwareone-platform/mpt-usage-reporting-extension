@@ -2,7 +2,11 @@ import datetime as dt
 
 import pytest
 
-from mpt_usage_reporting_extension.services.statements import StatementSelector
+from mpt_usage_reporting_extension.services.statements import (
+    StatementFilterBuilder,
+    StatementReport,
+    StatementSelector,
+)
 from mpt_usage_reporting_extension.window import RunWindow
 
 
@@ -106,3 +110,18 @@ async def test_select_merges_duplicates_by_id(mocker, statements_api, window):
     statements = await StatementSelector(api_service).select(window, ("PRD-1",), "")  # act
 
     assert len(statements) == 1
+
+
+def test_filter_omits_window_when_none():
+    builder = StatementFilterBuilder()
+
+    result = builder.build(("PRD-9",), "", None, "audit.issued.at", "Issued")
+
+    assert "audit.issued.at" not in str(result)
+    assert "eq(status,'Issued')" in str(result)
+
+
+def test_report_renders_without_window(capsys):
+    StatementReport([], None).render()  # act
+
+    assert capsys.readouterr().out.strip() == "Selected 0 statement(s)"

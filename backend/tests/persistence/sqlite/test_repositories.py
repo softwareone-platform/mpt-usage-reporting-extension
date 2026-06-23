@@ -499,3 +499,120 @@ async def test_prune_keeps_everything_within_window(
     result = await subscription_repo.prune(2026, 6)  # act
 
     assert result == 0
+
+
+async def test_delete_by_subscription_id(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_zero,
+    subscription_id,
+    year,
+    month,
+    other_month,
+):
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero, month=month))
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, month=other_month)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-OTHER")
+    )
+
+    result = await subscription_repo.delete(subscription_id=subscription_id)
+
+    assert result == 2  # every stored month of the subscription
+    assert (
+        await subscription_repo.get(subscription_id="SUB-OTHER", year=year, month=month) is not None
+    )
+
+
+async def test_delete_by_agreement(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_zero,
+    year,
+    month,
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", agreement_id="AGR-1")
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-2", agreement_id="AGR-1")
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-3", agreement_id="AGR-2")
+    )
+
+    result = await subscription_repo.delete(agreement_id="AGR-1")
+
+    assert result == 2
+    assert await subscription_repo.get(subscription_id="SUB-3", year=year, month=month) is not None
+
+
+async def test_delete_all_buckets(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_zero,
+    year,
+    month,
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1")
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-2")
+    )
+
+    result = await subscription_repo.delete()
+
+    assert result == 2
+    assert await subscription_repo.get(subscription_id="SUB-1", year=year, month=month) is None
+
+
+async def test_delete_no_match(subscription_repo):
+    result = await subscription_repo.delete(subscription_id="SUB-MISSING")
+
+    assert result == 0
+
+
+async def test_delete_agreement_repo(
+    agreement_repo,
+    charge_factory,
+    decimal_first,
+    decimal_zero,
+    other_month,
+):
+    await agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1")
+    )
+    await agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1", month=other_month)
+    )
+    await agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-2")
+    )
+
+    result = await agreement_repo.delete(agreement_id="AGR-1")
+
+    assert result == 2
+
+
+async def test_delete_agreement_repo_all(
+    agreement_repo,
+    charge_factory,
+    decimal_first,
+    decimal_zero,
+):
+    await agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1")
+    )
+    await agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-2")
+    )
+
+    result = await agreement_repo.delete()
+
+    assert result == 2

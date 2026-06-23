@@ -26,6 +26,12 @@ class SubscriptionAccumulationRepository(Protocol):  # noqa: WPS214
         """Delete buckets older than the 18-month retention window ending at (year, month)."""
         ...
 
+    async def delete(
+        self, *, subscription_id: str | None = None, agreement_id: str | None = None
+    ) -> int:
+        """Delete subscription buckets for the given scope (no scope deletes every bucket)."""
+        ...
+
     def updated(self, updated_on: dt.date) -> AsyncIterator[SubscriptionMonthlyAccumulation]:
         """Yield the subscription buckets last written on updated_on (streamed)."""
         ...
@@ -44,4 +50,8 @@ class AgreementAccumulationRepository(Protocol):
 
     async def prune(self, year: Year, month: Month) -> int:
         """Delete buckets older than the 18-month retention window ending at (year, month)."""
+        ...
+
+    async def delete(self, *, agreement_id: str | None = None) -> int:
+        """Delete agreement buckets for the given scope (no scope deletes every bucket)."""
         ...
