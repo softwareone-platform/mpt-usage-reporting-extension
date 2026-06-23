@@ -83,27 +83,33 @@ async def test_run_prunes_both_accumulation_tables(mocker, stub_database, ctx):
     agreement_prune.assert_awaited_once_with(anchor.year, Month(anchor.month))
 
 
-async def test_recalculate_resets_and_skips_prune(mocker, stub_database, ctx):
+async def test_recalculate_deletes_then_prunes(mocker, stub_database, ctx):
     selector = mocker.patch.object(pipeline, "StatementSelector").return_value
     selector.select = mocker.AsyncMock(return_value=[])
-    cleaner = mocker.patch.object(pipeline, "BucketCleaner").return_value
-    cleaner.clean = mocker.AsyncMock()
+    deleter = mocker.patch.object(pipeline, "BucketDeleter").return_value
+    deleter.delete = mocker.AsyncMock()
+    anchor = dt.datetime.now(tz=dt.UTC).date()  # cleanup anchors on the current UTC month
 
     await pipeline.UsageReportingPipeline(ctx).recalculate(None)  # act
 
     # a None scope is expanded to the configured products, not a global wipe
-    cleaner.clean.assert_awaited_once_with(ProductSelector("PRD-1"))
-    stub_database.subscription_repository.return_value.prune.assert_not_called()
-    stub_database.agreement_repository.return_value.prune.assert_not_called()
+    deleter.delete.assert_awaited_once_with(ProductSelector("PRD-1"))
+    # recalculate now performs a regular run, so retention pruning runs too
+    stub_database.subscription_repository.return_value.prune.assert_awaited_once_with(
+        anchor.year, Month(anchor.month)
+    )
+    stub_database.agreement_repository.return_value.prune.assert_awaited_once_with(
+        anchor.year, Month(anchor.month)
+    )
 
 
-async def test_recalculate_cleans_the_given_scope(mocker, stub_database, ctx):
+async def test_recalculate_deletes_the_given_scope(mocker, stub_database, ctx):
     selector = mocker.patch.object(pipeline, "StatementSelector").return_value
     selector.select = mocker.AsyncMock(return_value=[])
-    cleaner = mocker.patch.object(pipeline, "BucketCleaner").return_value
-    cleaner.clean = mocker.AsyncMock()
+    deleter = mocker.patch.object(pipeline, "BucketDeleter").return_value
+    deleter.delete = mocker.AsyncMock()
     scope = ProductSelector("PRD-9")
 
     await pipeline.UsageReportingPipeline(ctx).recalculate(scope)  # act
 
-    cleaner.clean.assert_awaited_once_with(scope)
+    deleter.delete.assert_awaited_once_with(scope)

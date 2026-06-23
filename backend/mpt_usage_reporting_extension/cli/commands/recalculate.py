@@ -20,7 +20,7 @@ def recalculate(
         typer.Option("--seller-id", help="Reprocess one seller."),
     ] = None,
 ) -> None:
-    """Reset the scope's buckets, then re-accumulate all its statements and push estimates."""
+    """Delete the scope's buckets, then perform a regular run."""
     scope = build_optional_selector(
         product_id=product_id,
         agreement_id=None,

@@ -10,7 +10,7 @@ from mpt_usage_reporting_extension.persistence.sqlite.database import (
     resolve_db_path,
 )
 from mpt_usage_reporting_extension.selectors import Selector, build_selector
-from mpt_usage_reporting_extension.services.bucket_clean import BucketCleaner
+from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter
 
 
 def delete(
@@ -44,8 +44,8 @@ def delete(
 async def _delete(api_service: MPTAPIService, scope: Selector) -> None:
     """Open the store and delete the scope's buckets."""
     async with SqliteDatabase(resolve_db_path()) as db:
-        await BucketCleaner(
+        await BucketDeleter(
             db.subscription_repository(),
             db.agreement_repository(),
             api_service.client.commerce.subscriptions,
-        ).clean(scope)
+        ).delete(scope)

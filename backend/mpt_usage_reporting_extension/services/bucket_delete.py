@@ -26,21 +26,21 @@ _SELLER_ID = "seller.id"
 
 
 @dataclass(frozen=True, slots=True)
-class CleanOutcome:
-    """How many buckets each accumulation table shed for a clean scope and month range."""
+class DeleteOutcome:
+    """How many buckets each accumulation table shed for a delete scope and month range."""
 
     subscription_deleted: int
     agreement_deleted: int
 
 
-class CleanReport:
-    """Render the outcome of a bucket clean as a one-line summary."""
+class DeleteReport:
+    """Render the outcome of a bucket delete as a one-line summary."""
 
-    def __init__(self, outcome: CleanOutcome) -> None:
+    def __init__(self, outcome: DeleteOutcome) -> None:
         self._outcome = outcome
 
     def render(self) -> None:
-        """Print the summary line for the clean."""
+        """Print the summary line for the delete."""
         typer.echo(self._summary())
 
     def _summary(self) -> str:
@@ -49,7 +49,7 @@ class CleanReport:
         return f"Deleted {subscription} subscription and {agreement} agreement bucket(s)"
 
 
-class BucketCleaner:  # noqa: WPS214
+class BucketDeleter:  # noqa: WPS214
     """Delete all stored accumulation buckets for a scope.
 
     Product and seller scopes are resolved to their agreement ids against the commerce API (an
@@ -69,50 +69,50 @@ class BucketCleaner:  # noqa: WPS214
         self._agreement_repo = agreement_repo
         self._subscriptions = subscriptions
 
-    async def clean(self, scope: Selector | None) -> CleanOutcome:
+    async def delete(self, scope: Selector | None) -> DeleteOutcome:
         """Delete the scope's buckets from both tables, then report."""
-        outcome = await self._delete(scope)
+        outcome = await self._delete_scope(scope)
         logger.info(
             "Deleted %d subscription and %d agreement bucket(s)",
             outcome.subscription_deleted,
             outcome.agreement_deleted,
         )
-        CleanReport(outcome).render()
+        DeleteReport(outcome).render()
         return outcome
 
-    async def _delete(self, scope: Selector | None) -> CleanOutcome:
+    async def _delete_scope(self, scope: Selector | None) -> DeleteOutcome:
         if scope is None:
-            return await self._clean_all()
+            return await self._delete_all()
         match scope:
             case SubscriptionSelector(subscription_id):
                 deleted = await self._subscription_repo.delete(subscription_id=subscription_id)
-                return CleanOutcome(deleted, 0)
+                return DeleteOutcome(deleted, 0)
             case AgreementSelector(agreement_id):
-                return await self._clean_agreement(agreement_id)
+                return await self._delete_agreement(agreement_id)
             case ProductSelector(product_id):
-                return await self._clean_query(RQLQuery().n(_PRODUCT_ID).eq(product_id))
+                return await self._delete_query(RQLQuery().n(_PRODUCT_ID).eq(product_id))
             case SellerSelector(seller_id):
-                return await self._clean_query(RQLQuery().n(_SELLER_ID).eq(seller_id))
+                return await self._delete_query(RQLQuery().n(_SELLER_ID).eq(seller_id))
         assert_never(scope)  # pragma: no cover
 
-    async def _clean_all(self) -> CleanOutcome:
+    async def _delete_all(self) -> DeleteOutcome:
         subscription_deleted = await self._subscription_repo.delete()
         agreement_deleted = await self._agreement_repo.delete()
-        return CleanOutcome(subscription_deleted, agreement_deleted)
+        return DeleteOutcome(subscription_deleted, agreement_deleted)
 
-    async def _clean_agreement(self, agreement_id: str) -> CleanOutcome:
+    async def _delete_agreement(self, agreement_id: str) -> DeleteOutcome:
         subscription_deleted = await self._subscription_repo.delete(agreement_id=agreement_id)
         agreement_deleted = await self._agreement_repo.delete(agreement_id=agreement_id)
-        return CleanOutcome(subscription_deleted, agreement_deleted)
+        return DeleteOutcome(subscription_deleted, agreement_deleted)
 
-    async def _clean_query(self, query: RQLQuery) -> CleanOutcome:
+    async def _delete_query(self, query: RQLQuery) -> DeleteOutcome:
         subscription_deleted = 0
         agreement_deleted = 0
         async for agreement_id in self._agreement_ids(query):
-            outcome = await self._clean_agreement(agreement_id)
+            outcome = await self._delete_agreement(agreement_id)
             subscription_deleted += outcome.subscription_deleted
             agreement_deleted += outcome.agreement_deleted
-        return CleanOutcome(subscription_deleted, agreement_deleted)
+        return DeleteOutcome(subscription_deleted, agreement_deleted)
 
     async def _agreement_ids(self, query: RQLQuery) -> AsyncIterator[str]:
         """Stream the distinct agreement ids of the subscriptions matching the query."""
