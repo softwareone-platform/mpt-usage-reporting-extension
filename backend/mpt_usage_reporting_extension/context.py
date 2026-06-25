@@ -13,3 +13,4 @@ class RunContext:
     window: RunWindow | None
     product_ids: tuple[str, ...]
     seller_id: str = ""
+    subscription_ids: tuple[str, ...] | None = None

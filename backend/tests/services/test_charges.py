@@ -136,6 +136,19 @@ async def test_accumulate_falls_back_to_issued(statement_charge_factory, stateme
     assert ("AGR-1", "SUB-1", 2026, 6) in result.accumulations
 
 
+async def test_accumulate_filters_by_subscription_ids(statement_charge_factory, statement_factory):
+    statement = statement_factory(issued="2026-06-01T10:00:00Z")
+    charges = [
+        statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00")),
+        statement_charge_factory("AGR-1", "SUB-2", statement=statement, price=("2.00", "2.00")),
+    ]
+
+    result = await ChargeAccumulator().accumulate(_aiter(charges), ("SUB-1",))
+
+    assert result.charge_count == 1
+    assert list(result.accumulations) == [("AGR-1", "SUB-1", 2026, 6)]
+
+
 def test_report_prints_summary_and_table(capsys):
     accumulation = ChargeAccumulation("AGR-1", "SUB-1", 2026, 6, ppx1=Decimal("2.00"))
     totals = ChargeTotals(

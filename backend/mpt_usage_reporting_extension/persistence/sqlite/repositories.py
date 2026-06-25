@@ -172,6 +172,13 @@ class SubscriptionAccumulationRepository:  # noqa: WPS214
         async for subscription_id in self.engine.distinct("subscription_id", **equals):
             yield str(subscription_id)
 
+    async def agreements_by_subscription(self, subscription_id: str) -> AsyncIterator[str]:
+        """Yield each distinct agreement id stored for one subscription."""
+        async for agreement_id in self.engine.distinct(
+            "agreement_id", subscription_id=subscription_id
+        ):
+            yield str(agreement_id)
+
     def _to_bucket(self, row: sqlite3.Row) -> SubscriptionMonthlyAccumulation:
         return SubscriptionMonthlyAccumulation(
             subscription_id=row["subscription_id"],

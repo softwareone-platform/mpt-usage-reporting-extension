@@ -8,11 +8,12 @@ from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 from rich.console import Console
 from rich.table import Table
 
-from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
+from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals, read_path
 
 logger = logging.getLogger(__name__)
 
 _REPORT_HEADERS = ("Agreement ID", "Subscription ID", "Year", "Month", "PPx1", "SPx1")
+_SUBSCRIPTION_ID = "subscription.id"
 
 
 class ChargeStreamer:
@@ -40,7 +41,11 @@ class ChargeStreamer:
 class ChargeAccumulator:
     """Accumulate streamed charges into per (agreement, subscription, month) totals."""
 
-    async def accumulate(self, charges: AsyncIterator[StatementCharge]) -> ChargeTotals:
+    async def accumulate(
+        self,
+        charges: AsyncIterator[StatementCharge],
+        subscription_ids: tuple[str, ...] | None = None,
+    ) -> ChargeTotals:
         """Consume the charge stream once, summing prices per accumulation key.
 
         Charges are grouped by ``(agreement_id, subscription_id, year, month)``, where the
@@ -49,7 +54,10 @@ class ChargeAccumulator:
         into a list. Persisting the buckets is a separate step.
         """
         totals = ChargeTotals()
+        selected = set(subscription_ids) if subscription_ids is not None else None
         async for charge in charges:
+            if selected is not None and read_path(charge, _SUBSCRIPTION_ID) not in selected:
+                continue
             totals.accumulate(ChargeAccumulation.from_charge(charge))
         return totals
 
