@@ -28,7 +28,7 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `MPT_TOOL_STORAGE_AIRTABLE_BASE_ID` | - | `appXXXXXXXXXXXXXX` | Airtable base id when Airtable storage is enabled |
 | `MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME` | - | `MigrationTracking` | Airtable table name when Airtable storage is enabled |
 | `MPT_ORDERS_API_POLLING_INTERVAL_SECS` | `120` | `60` | Order polling interval in seconds |
-| `MPT_DB_PATH` | - | `/data/storage.db` | Override path for the usage-accumulation SQLite database (default: `storage.db` in the backend root) |
+| `MPT_BSU_DB_PATH` | - | `/data/bsu.db` | Override path for the usage-accumulation SQLite database (default: `storage.db` in the backend root) |
 
 ## AppInsights Settings
 

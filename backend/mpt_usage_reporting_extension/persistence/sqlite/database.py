@@ -32,8 +32,8 @@ def _decimal_add(left: object, right: object) -> str:
 
 
 def resolve_db_path() -> Path:
-    """Resolve the storage.db path, honouring the override env var."""
-    db_path = os.environ.get("MPT_DB_PATH")
+    """Resolve the database path, honouring the MPT_BSU_DB_PATH override env var."""
+    db_path = os.environ.get("MPT_BSU_DB_PATH")
     return Path(db_path) if db_path else DEFAULT_DB_PATH
 
 
