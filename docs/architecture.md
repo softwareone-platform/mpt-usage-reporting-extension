@@ -80,8 +80,27 @@ any API work. Each stage is a service constructed with only the dependencies it 
   `agreement_monthly_accumulation` (PK `agreement_id, year, month`); both store `ppx1`, `spx1`, `updated_at`.
 
 The DB file defaults to the `DEFAULT_DB_PATH` constant (`storage.db` in the
-backend root) and can be overridden with the `MPT_DB_PATH` environment variable.
+backend root) and can be overridden with the `MPT_BSU_DB_PATH` environment variable.
 See [migrations.md](migrations.md).
+
+### Concurrency on the shared volume
+
+In production the DB file lives on a shared (SMB) persistent volume that the API
+deployment and the `billing-subscription-usage` CronJob write to concurrently.
+The store must therefore be configured for safe multi-writer access:
+
+- **`PRAGMA busy_timeout = 5000` (ms) on every connection** — set in
+  `database.py` (`_BUSY_TIMEOUT_MS`). This is the most important setting. The
+  SQLite default is `0`, which fails immediately with `SQLITE_BUSY` as soon as
+  another writer holds the lock; on the shared volume a writer must instead wait
+  for the lock to be released. Do not lower it to `0`.
+- **Do not enable WAL mode.** `journal_mode=WAL` depends on shared-memory/mmap
+  coordination that does not work over SMB and can misbehave or corrupt the
+  database. Keep the default rollback journal (`DELETE`, or `TRUNCATE`) and never
+  set `journal_mode=WAL`.
+- **Retry writes on `SQLITE_BUSY` / "database is locked".** Even with the busy
+  timeout, a heavily contended write can still surface a lock error, so writers
+  should retry a few times with a small backoff before giving up.
 
 ## Extension app
 

@@ -9,7 +9,7 @@ from mpt_usage_reporting_extension.persistence.sqlite import database
 
 
 def test_resolve_db_path_default(monkeypatch):
-    monkeypatch.delenv("DEFAULT_DB_PATH", raising=False)
+    monkeypatch.delenv("MPT_BSU_DB_PATH", raising=False)
 
     result = database.resolve_db_path()
 
@@ -19,7 +19,7 @@ def test_resolve_db_path_default(monkeypatch):
 
 def test_resolve_db_path_env_override(monkeypatch, tmp_path):
     target = tmp_path / "custom.db"
-    monkeypatch.setenv("MPT_DB_PATH", str(target))
+    monkeypatch.setenv("MPT_BSU_DB_PATH", str(target))
 
     result = database.resolve_db_path()
 
