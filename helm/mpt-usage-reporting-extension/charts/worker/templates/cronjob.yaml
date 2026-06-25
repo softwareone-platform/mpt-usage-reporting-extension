@@ -3,7 +3,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   namespace: {{ $.Release.Namespace }}
-  name: {{ include "common.fullname" $ }}-cronjob-{{ $name }}
+  name: {{ printf "%s-cronjob-%s" (include "common.fullname" $) $name | trunc 52 | trimSuffix "-" }}
   labels:
     {{- include "common.labels" $ | nindent 4 }}
 spec:
