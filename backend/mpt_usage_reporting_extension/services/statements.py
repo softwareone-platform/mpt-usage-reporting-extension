@@ -1,6 +1,7 @@
+import asyncio
 import datetime as dt
 import logging
-from collections.abc import Iterable
+from dataclasses import dataclass, field
 from typing import Any
 
 import typer
@@ -60,6 +61,18 @@ _SELECT_FIELDS = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class StatementScope:
+    """The entity scope a statement selection is confined to.
+
+    With ``agreement_ids`` the scope is those agreements; otherwise the products (and seller).
+    """
+
+    product_ids: tuple[str, ...]
+    seller_id: str
+    agreement_ids: tuple[str, ...] = field(default=())
+
+
 class StatementSelector:
     """Select automated billing statements for a run window.
 
@@ -76,32 +89,42 @@ class StatementSelector:
         self._api_service = api_service
         self._filter_builder = filter_builder or StatementFilterBuilder()
 
-    async def select(
+    async def select(  # noqa: WPS210  # merges multi-pass statement selections
         self,
         window: RunWindow | None,
         product_ids: tuple[str, ...],
         seller_id: str,
+        agreement_ids: tuple[str, ...] = (),
     ) -> list[Statement]:
         """Select statements issued or cancelled within the window, merged by id.
 
         A ``None`` window drops the date filter and selects every issued/cancelled statement
-        for the scope (used by a full ``recalculate`` rebuild).
+        for the scope (used by a full ``recalculate`` rebuild). When ``agreement_ids`` is given the
+        scope is narrowed to those agreements instead of the product/seller filter (used by a
+        scoped ``recalculate``).
         """
-        statements = self._api_service.client.billing.statements
+        scope = StatementScope(product_ids, seller_id, agreement_ids)
         merged: dict[str, Statement] = {}
-        for audit_field, status in _PASSES:
-            query = self._filter_builder.build(
-                product_ids,
-                seller_id,
-                window,
-                audit_field,
-                status,
+        selected_passes = await asyncio.gather(
+            *(
+                self._select_pass(scope, window, audit_field, status)
+                for audit_field, status in _PASSES
             )
-            merged.update({
-                statement.id: statement
-                async for statement in statements.filter(query).select(*_SELECT_FIELDS).iterate()
-            })
+        )
+        for selected in selected_passes:
+            merged.update(selected)
         return list(merged.values())
+
+    async def _select_pass(
+        self, scope: StatementScope, window: RunWindow | None, audit_field: str, status: str
+    ) -> dict[str, Statement]:
+        """Select the statements of one audit/status pass, keyed by statement id."""
+        query = self._filter_builder.build(scope, window, audit_field, status)
+        statements = self._api_service.client.billing.statements
+        return {
+            statement.id: statement
+            async for statement in statements.filter(query).select(*_SELECT_FIELDS).iterate()
+        }
 
 
 class StatementFilterBuilder:
@@ -109,26 +132,31 @@ class StatementFilterBuilder:
 
     def build(
         self,
-        product_ids: Iterable[str],
-        seller_id: str,
+        scope: StatementScope,
         window: RunWindow | None,
         audit_field: str,
         status: str,
     ) -> RQLQuery:
         """Build the full statement filter for a single audit/status pass."""
-        query = self._base_statement_filter(product_ids, seller_id) & self._status_filter(status)
+        query = self._base_statement_filter(scope) & self._status_filter(status)
         if window is not None:
             query &= self._field_window(audit_field, window)
         logger.info("Selecting %s statements by %s with RQL: %s", status, audit_field, query)
         return query
 
-    def _base_statement_filter(self, product_ids: Iterable[str], seller_id: str) -> RQLQuery:
-        """Build the shared RQL filter for automated statements of the given products."""
+    def _base_statement_filter(self, scope: StatementScope) -> RQLQuery:
+        """Build the shared RQL filter for automated statements of the scope's agreements/products.
+
+        With ``agreement_ids`` the scope is those agreements; otherwise the products (and seller).
+        """
         automated = RQLQuery().n("billingType").eq("Automated")
-        products = RQLQuery().n(_PRODUCT_ID).in_(list(product_ids))
+        if scope.agreement_ids:
+            agreements = RQLQuery().n(_AGREEMENT_ID).in_(list(scope.agreement_ids))
+            return automated & agreements
+        products = RQLQuery().n(_PRODUCT_ID).in_(list(scope.product_ids))
         rql = automated & products
-        if seller_id:
-            rql &= RQLQuery().n("seller.id").eq(seller_id)
+        if scope.seller_id:
+            rql &= RQLQuery().n("seller.id").eq(scope.seller_id)
         return rql
 
     def _status_filter(self, status: str) -> RQLQuery:

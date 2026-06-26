@@ -1,9 +1,7 @@
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
-from typing import assert_never
+from dataclasses import dataclass, field
 
-import typer
 from mpt_api_client import RQLQuery
 from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
 
@@ -27,10 +25,22 @@ _SELLER_ID = "seller.id"
 
 @dataclass(frozen=True, slots=True)
 class DeleteOutcome:
-    """How many buckets each accumulation table shed for a delete scope and month range."""
+    """Ordered subscription ids deleted by the scope reset."""
 
-    subscription_deleted: int
-    agreement_deleted: int
+    subscriptions: list[str] = field(default_factory=list)
+    agreements: list[str] = field(default_factory=list)
+
+    @classmethod
+    async def from_subscriptions(
+        cls,
+        subscriptions: AsyncIterator[str],
+        agreements: list[str] | None = None,
+    ) -> "DeleteOutcome":
+        """Build an outcome by consuming a stream of deleted subscription ids."""
+        return cls(
+            subscriptions=[subscription_id async for subscription_id in subscriptions],
+            agreements=[] if agreements is None else agreements,
+        )
 
 
 class DeleteReport:
@@ -40,13 +50,18 @@ class DeleteReport:
         self._outcome = outcome
 
     def render(self) -> None:
-        """Print the summary line for the delete."""
-        typer.echo(self._summary())
+        """Log each deleted bucket id, then the summary line."""
+        for subscription_id in self._outcome.subscriptions:
+            logger.info("Deleted subscription: %s", subscription_id)
+        for agreement_id in self._outcome.agreements:
+            logger.info("Deleted agreement: %s", agreement_id)
+        logger.info(self._summary())
 
     def _summary(self) -> str:
-        subscription = self._outcome.subscription_deleted
-        agreement = self._outcome.agreement_deleted
-        return f"Deleted {subscription} subscription and {agreement} agreement bucket(s)"
+        subscriptions = len(self._outcome.subscriptions)
+        agreements = len(self._outcome.agreements)
+        total = subscriptions + agreements
+        return f"Deleted {total} bucket(s) ({subscriptions} subscription, {agreements} agreement)"
 
 
 class BucketDeleter:  # noqa: WPS214
@@ -68,14 +83,20 @@ class BucketDeleter:  # noqa: WPS214
         self._subscription_repo = subscription_repo
         self._agreement_repo = agreement_repo
         self._subscriptions = subscriptions
+        self._statement_agreements: frozenset[str] = frozenset()
+
+    @property
+    def statement_agreements(self) -> frozenset[str]:
+        """Return agreement ids whose statements should be re-selected."""
+        return self._statement_agreements
 
     async def delete(self, scope: Selector | None) -> DeleteOutcome:
         """Delete the scope's buckets from both tables, then report."""
+        self._statement_agreements = frozenset()
         outcome = await self._delete_scope(scope)
         logger.info(
-            "Deleted %d subscription and %d agreement bucket(s)",
-            outcome.subscription_deleted,
-            outcome.agreement_deleted,
+            "Deleted %d bucket(s)",
+            len(outcome.subscriptions) + len(outcome.agreements),
         )
         DeleteReport(outcome).render()
         return outcome
@@ -85,34 +106,64 @@ class BucketDeleter:  # noqa: WPS214
             return await self._delete_all()
         match scope:
             case SubscriptionSelector(subscription_id):
-                deleted = await self._subscription_repo.delete(subscription_id=subscription_id)
-                return DeleteOutcome(deleted, 0)
+                return await self._delete_subscription(subscription_id)
             case AgreementSelector(agreement_id):
                 return await self._delete_agreement(agreement_id)
             case ProductSelector(product_id):
                 return await self._delete_query(RQLQuery().n(_PRODUCT_ID).eq(product_id))
             case SellerSelector(seller_id):
                 return await self._delete_query(RQLQuery().n(_SELLER_ID).eq(seller_id))
-        assert_never(scope)  # pragma: no cover
 
     async def _delete_all(self) -> DeleteOutcome:
-        subscription_deleted = await self._subscription_repo.delete()
+        outcome = await DeleteOutcome.from_subscriptions(
+            self._delete_subscription_ids(self._subscription_repo.subscriptions_by_agreement())
+        )
         agreement_deleted = await self._agreement_repo.delete()
-        return DeleteOutcome(subscription_deleted, agreement_deleted)
+        if not outcome.subscriptions and agreement_deleted == 0:
+            return DeleteOutcome()
+        return outcome
+
+    async def _delete_subscription(self, subscription_id: str) -> DeleteOutcome:
+        agreements = [
+            agreement_id
+            async for agreement_id in self._subscription_repo.agreements_by_subscription(
+                subscription_id
+            )
+        ]
+        deleted = await self._subscription_repo.delete(subscription_id=subscription_id)
+        if deleted == 0:
+            return DeleteOutcome()
+        self._statement_agreements = frozenset(agreements)
+        return DeleteOutcome(subscriptions=[subscription_id])
 
     async def _delete_agreement(self, agreement_id: str) -> DeleteOutcome:
-        subscription_deleted = await self._subscription_repo.delete(agreement_id=agreement_id)
+        outcome = await DeleteOutcome.from_subscriptions(
+            self._delete_subscription_ids(
+                self._subscription_repo.subscriptions_by_agreement(agreement_id)
+            )
+        )
         agreement_deleted = await self._agreement_repo.delete(agreement_id=agreement_id)
-        return DeleteOutcome(subscription_deleted, agreement_deleted)
+        if not outcome.subscriptions and agreement_deleted == 0:
+            return DeleteOutcome()
+        self._statement_agreements |= frozenset((agreement_id,))
+        agreements = [agreement_id] if agreement_deleted > 0 else []
+        return DeleteOutcome(subscriptions=outcome.subscriptions, agreements=agreements)
 
     async def _delete_query(self, query: RQLQuery) -> DeleteOutcome:
-        subscription_deleted = 0
-        agreement_deleted = 0
+        subscriptions: list[str] = []
+        agreements: list[str] = []
         async for agreement_id in self._agreement_ids(query):
             outcome = await self._delete_agreement(agreement_id)
-            subscription_deleted += outcome.subscription_deleted
-            agreement_deleted += outcome.agreement_deleted
-        return DeleteOutcome(subscription_deleted, agreement_deleted)
+            subscriptions.extend(outcome.subscriptions)
+            agreements.extend(outcome.agreements)
+        return DeleteOutcome(subscriptions=subscriptions, agreements=agreements)
+
+    async def _delete_subscription_ids(
+        self, subscriptions: AsyncIterator[str]
+    ) -> AsyncIterator[str]:
+        async for subscription_id in subscriptions:
+            if await self._subscription_repo.delete(subscription_id=subscription_id):
+                yield subscription_id
 
     async def _agreement_ids(self, query: RQLQuery) -> AsyncIterator[str]:
         """Stream the distinct agreement ids of the subscriptions matching the query."""
@@ -120,6 +171,6 @@ class BucketDeleter:  # noqa: WPS214
         async for sub in self._subscriptions.filter(query).select("agreement.id").iterate():
             agreement = getattr(sub, "agreement", None)
             agreement_id = getattr(agreement, "id", None)
-            if agreement_id and agreement_id not in seen:
+            if isinstance(agreement_id, str) and agreement_id not in seen:
                 seen.add(agreement_id)
                 yield agreement_id

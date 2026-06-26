@@ -22,15 +22,26 @@ class AccumulationPersister:
         self._subscription_repo = subscription_repo
         self._agreement_repo = agreement_repo
 
-    async def persist(self, accumulations: Iterable[ChargeAccumulation]) -> None:
-        """Additively upsert each accumulation bucket into both monthly tables.
+    async def persist(
+        self,
+        accumulations: Iterable[ChargeAccumulation],
+        agreement_ids: frozenset[str] | None = None,
+    ) -> None:
+        """Additively upsert each accumulation bucket into the monthly tables.
 
         Buckets without a billing month are skipped to respect the table CHECK constraints.
+
+        ``agreement_ids`` controls the agreement table. ``None`` (the default, used by a regular
+        run) writes every bucket's agreement total. A set restricts agreement writes to those,
+        so a subscription-scoped recalculate (empty set) rebuilds its subscription bucket without
+        touching the shared agreement bucket it left intact.
         """
         for bucket in accumulations:
-            await self._write(bucket)  # noqa: WPS476
+            await self._write(bucket, agreement_ids)  # noqa: WPS476
 
-    async def _write(self, bucket: ChargeAccumulation) -> None:
+    async def _write(
+        self, bucket: ChargeAccumulation, agreement_ids: frozenset[str] | None
+    ) -> None:
         if bucket.year is None or bucket.month is None:
             logger.warning(
                 "Skipping persistence for bucket without a billing month "
@@ -48,4 +59,5 @@ class AccumulationPersister:
             spx1=bucket.spx1,
         )
         await self._subscription_repo.accumulate(charge)
-        await self._agreement_repo.accumulate(charge)
+        if agreement_ids is None or bucket.agreement_id in agreement_ids:
+            await self._agreement_repo.accumulate(charge)

@@ -1,5 +1,9 @@
 from mpt_usage_reporting_extension import cli
-from mpt_usage_reporting_extension.selectors import SellerSelector
+from mpt_usage_reporting_extension.selectors import (
+    AgreementSelector,
+    SellerSelector,
+    SubscriptionSelector,
+)
 
 
 def _patch_pipeline(mocker):
@@ -22,6 +26,26 @@ def test_recalculate_invokes_pipeline_with_scope(mocker, runner):
     ctx = pipeline_cls.call_args.args[0]
     assert ctx.seller_id == "SEL-1"
     assert ctx.window is None
+
+
+def test_recalculate_with_agreement_scope(mocker, runner):
+    pipeline_cls = _patch_pipeline(mocker)
+
+    result = runner.invoke(cli.app, ["recalculate", "--agreement-id", "AGR-1"])
+
+    assert result.exit_code == 0
+    recalc = pipeline_cls.return_value.recalculate
+    assert recalc.await_args.args[0] == AgreementSelector("AGR-1")
+
+
+def test_recalculate_with_subscription_scope(mocker, runner):
+    pipeline_cls = _patch_pipeline(mocker)
+
+    result = runner.invoke(cli.app, ["recalculate", "--subscription-id", "SUB-1"])
+
+    assert result.exit_code == 0
+    recalc = pipeline_cls.return_value.recalculate
+    assert recalc.await_args.args[0] == SubscriptionSelector("SUB-1")
 
 
 def test_recalculate_no_scope_passes_none(mocker, runner):

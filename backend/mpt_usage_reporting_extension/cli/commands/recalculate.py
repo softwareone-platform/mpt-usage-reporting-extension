@@ -15,16 +15,24 @@ def recalculate(
         str | None,
         typer.Option("--product-id", help="Reprocess one product (defaults to all configured)."),
     ] = None,
+    agreement_id: Annotated[
+        str | None,
+        typer.Option("--agreement-id", help="Reprocess one agreement."),
+    ] = None,
+    subscription_id: Annotated[
+        str | None,
+        typer.Option("--subscription-id", help="Reprocess one subscription."),
+    ] = None,
     seller_id: Annotated[
         str | None,
         typer.Option("--seller-id", help="Reprocess one seller."),
     ] = None,
 ) -> None:
-    """Delete the scope's buckets, then perform a regular run."""
+    """Delete the scope's buckets, then re-accumulate exactly what was reset."""
     scope = build_optional_selector(
         product_id=product_id,
-        agreement_id=None,
-        subscription_id=None,
+        agreement_id=agreement_id,
+        subscription_id=subscription_id,
         seller_id=seller_id,
     )
     settings = ExtensionSettings.load()

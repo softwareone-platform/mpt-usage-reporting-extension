@@ -8,7 +8,11 @@ from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 from rich.console import Console
 from rich.table import Table
 
-from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
+from mpt_usage_reporting_extension.accumulation import (
+    ChargeAccumulation,
+    ChargeTotals,
+    StatementChargeFilter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,11 @@ class ChargeStreamer:
 class ChargeAccumulator:
     """Accumulate streamed charges into per (agreement, subscription, month) totals."""
 
-    async def accumulate(self, charges: AsyncIterator[StatementCharge]) -> ChargeTotals:
+    async def accumulate(
+        self,
+        charges: AsyncIterator[StatementCharge],
+        charge_filter: StatementChargeFilter | None = None,
+    ) -> ChargeTotals:
         """Consume the charge stream once, summing prices per accumulation key.
 
         Charges are grouped by ``(agreement_id, subscription_id, year, month)``, where the
@@ -50,6 +58,8 @@ class ChargeAccumulator:
         """
         totals = ChargeTotals()
         async for charge in charges:
+            if charge_filter is not None and not charge_filter.matches(charge):
+                continue
             totals.accumulate(ChargeAccumulation.from_charge(charge))
         return totals
 
