@@ -89,7 +89,7 @@ class StatementSelector:
         self._api_service = api_service
         self._filter_builder = filter_builder or StatementFilterBuilder()
 
-    async def select(
+    async def select(  # noqa: WPS210  # merges multi-pass statement selections
         self,
         window: RunWindow | None,
         product_ids: tuple[str, ...],
@@ -106,7 +106,10 @@ class StatementSelector:
         scope = StatementScope(product_ids, seller_id, agreement_ids)
         merged: dict[str, Statement] = {}
         selected_passes = await asyncio.gather(
-            *(self._select_pass(scope, window, audit_field, status) for audit_field, status in _PASSES)
+            *(
+                self._select_pass(scope, window, audit_field, status)
+                for audit_field, status in _PASSES
+            )
         )
         for selected in selected_passes:
             merged.update(selected)

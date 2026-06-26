@@ -86,7 +86,9 @@ statistics = false
 per-file-ignores = [
   # The leading `*` makes this match both CI (`migrations/...`) and pre-commit (`backend/migrations/...`) paths.
   "*migrations/**:WPS102",
-  "*tests/**:WPS202,WPS432,WPS211",
+  # Tests favour long descriptive names (WPS118), repeated fixture literals (WPS204), and local
+  # helper functions (WPS430), none of which are smells in test code.
+  "*tests/**:WPS202,WPS432,WPS211,WPS118,WPS204,WPS430",
   # `utils` is a wemake-blacklisted module name, but it's the agreed home for shared helpers.
   "*utils.py:WPS100",
   # The push-estimates command co-locates its selectors and one resolver class per selector.

@@ -1,4 +1,5 @@
 import datetime as dt
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, NamedTuple, Self
@@ -24,6 +25,23 @@ def read_path(charge: StatementCharge, path: str) -> str | None:
         if current is None:
             return None
     return str(current)
+
+
+class StatementChargeFilter:
+    """Keep only charges whose subscription id is among the selected ids."""
+
+    def __init__(self, subscription_ids: Iterable[str]) -> None:
+        self.subscription_ids = frozenset(subscription_ids)
+
+    @classmethod
+    def for_subscriptions(cls, subscription_ids: Iterable[str]) -> "StatementChargeFilter | None":
+        """Build a filter for the given ids, or None when there is nothing to filter by."""
+        ids = frozenset(subscription_ids)
+        return cls(ids) if ids else None
+
+    def matches(self, charge: StatementCharge) -> bool:
+        """Return whether the charge belongs to one of the selected subscriptions."""
+        return read_path(charge, _SUBSCRIPTION_ID) in self.subscription_ids
 
 
 def _year_month(charge: StatementCharge) -> tuple[Year | None, Month | None]:

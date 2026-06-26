@@ -4,7 +4,7 @@ from collections.abc import Iterable
 import typer
 from mpt_api_client.resources.billing.statements import Statement
 
-from mpt_usage_reporting_extension.accumulation import ChargeAccumulation
+from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, StatementChargeFilter
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
@@ -54,13 +54,12 @@ class UsageReportingPipeline:  # noqa: WPS214
         """
         async with SqliteDatabase(resolve_db_path()) as db:
             reset, statement_agreements, agreement_ids = await self._reset(scope, db)
-            subscription_ids = tuple(dict.fromkeys(reset.subscriptions))
-            previous_subscription_ids = self._ctx.subscription_ids
-            self._ctx.subscription_ids = subscription_ids or None
-            try:
+            previous_filter = self._ctx.charge_filter
+            self._ctx.charge_filter = StatementChargeFilter.for_subscriptions(reset.subscriptions)
+            try:  # noqa: WPS501  # restore the filter even when the re-fill raises
                 await self._refill(reset, statement_agreements, agreement_ids, db)
             finally:
-                self._ctx.subscription_ids = previous_subscription_ids
+                self._ctx.charge_filter = previous_filter
 
     async def _run(self, db: SqliteDatabase) -> None:
         """Collect charges, persist them, update estimates, then prune old rows."""
@@ -108,11 +107,13 @@ class UsageReportingPipeline:  # noqa: WPS214
         if scope is not None:
             reset = await deleter.delete(scope)
             statement_agreements = deleter.statement_agreements
-            agreement_ids = frozenset() if isinstance(scope, SubscriptionSelector) else statement_agreements
+            agreement_ids = (
+                frozenset() if isinstance(scope, SubscriptionSelector) else statement_agreements
+            )
             return reset, statement_agreements, agreement_ids
         return await self._reset_products(deleter)
 
-    async def _reset_products(
+    async def _reset_products(  # noqa: WPS210  # accumulates four per-product reset lists
         self, deleter: BucketDeleter
     ) -> tuple[DeleteOutcome, frozenset[str], frozenset[str]]:
         """Delete each configured product's buckets and union their reset scopes."""
@@ -160,7 +161,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         """Stream and accumulate the statements' charges, then render the charge report."""
         totals = await ChargeAccumulator().accumulate(
             ChargeStreamer(self._ctx.api_service).stream(statements),
-            self._ctx.subscription_ids,
+            self._ctx.charge_filter,
         )
         ChargeReport(totals).render()
         return totals.accumulations.values()

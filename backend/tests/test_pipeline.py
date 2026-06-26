@@ -5,6 +5,7 @@ import typer
 from mpt_api_client.resources.billing.statements import Statement
 
 from mpt_usage_reporting_extension import pipeline
+from mpt_usage_reporting_extension.accumulation import StatementChargeFilter
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.selectors import (
     AgreementSelector,
@@ -100,7 +101,9 @@ async def test_run_prunes_both_accumulation_tables(stub_database, usage, selecto
     agreement_prune.assert_awaited_once_with(anchor.year, Month(anchor.month))
 
 
-async def test_recalculate_deletes_then_prunes(mocker, stub_database, usage, selector, deleter, ctx):
+async def test_recalculate_deletes_then_prunes(
+    mocker, stub_database, usage, selector, deleter, ctx
+):
     deleter.delete.return_value = DeleteOutcome()
     deleter.statement_agreements = frozenset(("AGR-1",))
     anchor = dt.datetime.now(tz=dt.UTC).date()  # cleanup anchors on the current UTC month
@@ -126,7 +129,7 @@ async def test_recalculate_deletes_the_given_scope(stub_database, usage, selecto
     await usage.recalculate(scope)  # act
 
     deleter.delete.assert_awaited_once_with(scope)
-    assert ctx.subscription_ids is None
+    assert ctx.charge_filter is None
 
 
 async def test_recalculate_persists_reset_only(
@@ -159,7 +162,7 @@ async def test_recalculate_persists_reset_only(
     persisted, agreement_ids = persister.persist.call_args.args
     assert [bucket.subscription_id for bucket in persisted] == ["SUB-1"]
     assert agreement_ids == frozenset(("AGR-1",))
-    assert accumulate.await_args.args[1] == ("SUB-1",)
+    assert accumulate.await_args.args[1].subscription_ids == frozenset(("SUB-1",))
 
 
 async def test_recalculate_agreement_scope(stub_database, usage, selector, deleter, ctx):
@@ -238,7 +241,8 @@ async def test_recalculate_keeps_agreement_only_resets(
 async def test_recalculate_restores_previous_subscription_filter_on_refill_failure(
     mocker, stub_database, usage, ctx, selector, deleter
 ):
-    ctx.subscription_ids = ("PREVIOUS",)
+    previous_filter = StatementChargeFilter(("PREVIOUS",))
+    ctx.charge_filter = previous_filter
     deleter.delete.return_value = DeleteOutcome(subscriptions=["SUB-1"])
     deleter.statement_agreements = frozenset()
     mocker.patch.object(pipeline, "ChargeStreamer")
@@ -249,6 +253,4 @@ async def test_recalculate_restores_previous_subscription_filter_on_refill_failu
     with pytest.raises(RuntimeError, match="boom"):
         await usage.recalculate(ProductSelector("PRD-1"))
 
-    assert ctx.subscription_ids == ("PREVIOUS",)
-
-
+    assert ctx.charge_filter is previous_filter

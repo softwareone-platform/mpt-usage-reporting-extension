@@ -1,7 +1,6 @@
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import cast
 
 from mpt_api_client import RQLQuery
 from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
@@ -62,10 +61,7 @@ class DeleteReport:
         subscriptions = len(self._outcome.subscriptions)
         agreements = len(self._outcome.agreements)
         total = subscriptions + agreements
-        return (
-            f"Deleted {total} bucket(s) "
-            f"({subscriptions} subscription, {agreements} agreement)"
-        )
+        return f"Deleted {total} bucket(s) ({subscriptions} subscription, {agreements} agreement)"
 
 
 class BucketDeleter:  # noqa: WPS214
@@ -162,7 +158,9 @@ class BucketDeleter:  # noqa: WPS214
             agreements.extend(outcome.agreements)
         return DeleteOutcome(subscriptions=subscriptions, agreements=agreements)
 
-    async def _delete_subscription_ids(self, subscriptions: AsyncIterator[str]) -> AsyncIterator[str]:
+    async def _delete_subscription_ids(
+        self, subscriptions: AsyncIterator[str]
+    ) -> AsyncIterator[str]:
         async for subscription_id in subscriptions:
             if await self._subscription_repo.delete(subscription_id=subscription_id):
                 yield subscription_id
@@ -175,4 +173,4 @@ class BucketDeleter:  # noqa: WPS214
             agreement_id = getattr(agreement, "id", None)
             if isinstance(agreement_id, str) and agreement_id not in seen:
                 seen.add(agreement_id)
-                yield cast(str, agreement_id)
+                yield agreement_id

@@ -80,7 +80,7 @@ async def test_delete_subscription_leaves_agreement(deleter, subscription_repo, 
 async def test_delete_subscription_reads_agreements_before_delete(deleter, subscription_repo):
     subscription_repo.stored_agreements = ["AGR-9"]
 
-    async def _delete(**_kwargs):
+    async def _delete(**_kwargs):  # noqa: RUF029  # async to match the AsyncMock side_effect
         subscription_repo.stored_agreements = []
         return 1
 
@@ -92,7 +92,9 @@ async def test_delete_subscription_reads_agreements_before_delete(deleter, subsc
 
 
 async def test_delete_agreement_clears_both_tables(deleter, subscription_repo, agreement_repo):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter(["SUB-1"])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
+        "SUB-1"
+    ])
     result = await deleter.delete(AgreementSelector("AGR-1"))
 
     assert result == DeleteOutcome(subscriptions=["SUB-1"], agreements=["AGR-1"])
@@ -138,7 +140,9 @@ async def test_delete_seller_uses_seller_query(deleter, subscriptions):
 
 async def test_delete_skips_missing_agreement(deleter, subscription_repo, subscriptions):
     subscriptions.agreements = [None, "AGR-1"]
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter(["SUB-1"])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
+        "SUB-1"
+    ])
 
     result = await deleter.delete(ProductSelector("PRD-1"))
 
@@ -162,7 +166,9 @@ async def test_delete_product_zero_delete_keeps_scope_empty(
 
 
 async def test_delete_none_clears_everything(deleter, subscription_repo, agreement_repo):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter(["SUB-1"])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
+        "SUB-1"
+    ])
     result = await deleter.delete(None)
 
     assert result == DeleteOutcome(subscriptions=["SUB-1"])
@@ -171,7 +177,9 @@ async def test_delete_none_clears_everything(deleter, subscription_repo, agreeme
 
 
 async def test_delete_reports_the_summary(deleter, subscription_repo, caplog):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter(["SUB-1"])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
+        "SUB-1"
+    ])
 
     caplog.set_level("INFO")
     await deleter.delete(AgreementSelector("AGR-1"))  # act
