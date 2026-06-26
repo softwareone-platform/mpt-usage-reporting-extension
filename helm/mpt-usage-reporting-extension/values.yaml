@@ -23,8 +23,6 @@ global:
   MpApiToken: ZGVmYXVsdA==
   # MPT_PRODUCTS_IDS: comma-separated Marketplace product ids the API/events process binds to.
   MpProductsIds: default
-  # MPT_BSU_PRODUCT_IDS: comma-separated Marketplace product ids to estimate.
-  MptBsuProductIds: default
   # MPT_BSU_DB_PATH: SQLite database path. Should live under persistence.mountPath.
   MptBsuDbPath: /data/bsu.db
 
