@@ -31,7 +31,6 @@ spec:
           args:
             - run
             - consumer
-            - --no-color
             - --reload
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:

@@ -8,5 +8,4 @@ metadata:
 data:
   MPT_API_BASE_URL: {{ .Values.global.MpBaseUrl | quote }}
   MPT_PRODUCTS_IDS: {{ .Values.global.MpProductsIds | quote }}
-  MPT_BSU_PRODUCT_IDS: {{ .Values.global.MptBsuProductIds | quote }}
   MPT_BSU_DB_PATH: {{ .Values.global.MptBsuDbPath | quote }}
