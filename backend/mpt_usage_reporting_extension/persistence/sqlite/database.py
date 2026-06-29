@@ -9,9 +9,11 @@ import aiosqlite
 from mpt_usage_reporting_extension.constants import DEFAULT_DB_PATH
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
+    ExecutionRepository,
+    StatementProcessingRepository,
     SubscriptionAccumulationRepository,
 )
-from mpt_usage_reporting_extension.persistence.sqlite import repositories
+from mpt_usage_reporting_extension.persistence.sqlite import insights, repositories
 
 _BUSY_TIMEOUT_MS = 5000
 
@@ -44,7 +46,7 @@ async def _configure(connection: aiosqlite.Connection) -> None:
     await connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
 
 
-class SqliteDatabase:
+class SqliteDatabase:  # noqa: WPS214
     """SQLite store opened from a file path, handing out accumulation repositories."""
 
     def __init__(self, path: Path) -> None:
@@ -85,6 +87,14 @@ class SqliteDatabase:
     def agreement_repository(self) -> AgreementAccumulationRepository:
         """Return the agreement monthly accumulation repository."""
         return repositories.AgreementAccumulationRepository(self.connection)
+
+    def execution_repository(self) -> ExecutionRepository:
+        """Return the command-execution insight repository."""
+        return insights.ExecutionRepository(self.connection)
+
+    def statement_processing_repository(self) -> StatementProcessingRepository:
+        """Return the per-statement processing insight repository."""
+        return insights.StatementProcessingRepository(self.connection)
 
     async def close(self) -> None:
         """Close the underlying SQLite connection."""

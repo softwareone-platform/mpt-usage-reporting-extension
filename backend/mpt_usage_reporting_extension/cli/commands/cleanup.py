@@ -21,4 +21,5 @@ def cleanup(
     """Delete accumulation rows older than the rolling 18-month retention window."""
     today = dt.datetime.now(tz=dt.UTC).date()
     anchor = to_date(date) or today
-    asyncio.run(do_cleanup(anchor))
+    parameters = {"date": date}
+    asyncio.run(do_cleanup(anchor, parameters))

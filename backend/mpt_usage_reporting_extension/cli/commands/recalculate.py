@@ -34,4 +34,5 @@ def recalculate(
         product_ids=(product_id,) if product_id else settings.product_ids,
         seller_id=seller_id or "",
     )
-    asyncio.run(UsageReportingPipeline(ctx).recalculate(scope))
+    parameters = {"product_id": product_id, "seller_id": seller_id}
+    asyncio.run(UsageReportingPipeline(ctx).recalculate(scope, parameters))

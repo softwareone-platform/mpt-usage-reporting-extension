@@ -7,6 +7,7 @@ from mpt_usage_reporting_extension.cli.commands import (
     push_estimates_by_updated_at,
     recalculate,
     run,
+    status,
 )
 
 app = typer.Typer(
@@ -33,6 +34,7 @@ app.command()(run.run)
 app.command()(cleanup.cleanup)
 app.command()(delete.delete)
 app.command()(recalculate.recalculate)
+app.command()(status.status)
 app.add_typer(_push_estimates_app, name="push-estimates")
 
 

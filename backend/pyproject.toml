@@ -63,7 +63,8 @@ omit = [
 ]
 
 [tool.flake8]
-allowed-domain-names = ["result"]
+# `parameters` is the agreed domain term for a tracked command's recorded CLI inputs.
+allowed-domain-names = ["result", "parameters"]
 aaa_act_block_style = "large"
 doctests = true
 extend-ignore = ["WPS226"]
@@ -92,6 +93,8 @@ per-file-ignores = [
   # The push-estimates command co-locates its selectors and one resolver class per selector.
   # Scope to the source path so it doesn't shadow the `*tests/**` ignores on the test module.
   "*cli/commands/push_estimates_by_id.py:WPS202",
+  # The pipeline orchestrates every stage, so it sits one collaborator over the import cap.
+  "*pipeline.py:WPS201",
 ]
 
 [tool.ruff]

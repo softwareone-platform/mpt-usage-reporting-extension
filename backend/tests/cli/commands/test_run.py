@@ -13,6 +13,11 @@ def test_run_invokes_pipeline(mocker, runner):
     result = runner.invoke(cli.app, ["run", "--date", "2026-06-01"])
 
     assert result.exit_code == 0
-    pipeline_cls.return_value.run.assert_awaited_once()
+    run_mock = pipeline_cls.return_value.run
+    run_mock.assert_awaited_once()
+    parameters = run_mock.await_args.args[0]
+    assert parameters["date"].date() == dt.date(2026, 6, 1)
+    assert parameters["from_date"] is None
+    assert parameters["till_date"] is None
     ctx = pipeline_cls.call_args.args[0]
     assert ctx.window == resolve_window(dt.date(2026, 6, 1), None, None)

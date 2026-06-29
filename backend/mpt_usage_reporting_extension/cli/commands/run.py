@@ -34,4 +34,5 @@ def run(
         window=window,
         product_ids=settings.product_ids,
     )
-    asyncio.run(UsageReportingPipeline(ctx).run())
+    parameters = {"date": date, "from_date": from_date, "till_date": till_date}
+    asyncio.run(UsageReportingPipeline(ctx).run(parameters))
