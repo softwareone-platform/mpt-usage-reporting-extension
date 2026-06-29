@@ -15,7 +15,7 @@ _DEFAULT_LIMIT = 10
 def status(
     limit: Annotated[
         int,
-        typer.Option("--limit", help="How many recent command executions to show."),
+        typer.Option("--limit", min=1, help="How many recent command executions to show."),
     ] = _DEFAULT_LIMIT,
 ) -> None:
     """Show the most recent command executions and their status."""

@@ -40,3 +40,14 @@ def test_status_passes_limit(mocker, runner, stub_database):
 
     assert result.exit_code == 0
     repo.recent.assert_called_once_with(3)
+
+
+def test_status_rejects_non_positive_limit(mocker, runner, stub_database):
+    repo = mocker.Mock()
+    repo.recent = mocker.Mock(return_value=_aiter([]))
+    stub_database.execution_repository = mocker.Mock(return_value=repo)
+
+    result = runner.invoke(cli.app, ["status", "--limit", "0"])
+
+    assert result.exit_code != 0
+    repo.recent.assert_not_called()
