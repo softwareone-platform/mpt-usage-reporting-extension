@@ -2,7 +2,11 @@ from decimal import Decimal
 
 import pytest
 
-from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
+from mpt_usage_reporting_extension.accumulation import (
+    ChargeAccumulation,
+    ChargeTotals,
+    StatementChargeFilter,
+)
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
     ChargeReport,
@@ -190,6 +194,37 @@ async def test_accumulate_falls_back_to_issued(statement_charge_factory, stateme
     result = await ChargeAccumulator().accumulate(_aiter([charge]))
 
     assert ("AGR-1", "SUB-1", 2026, 6) in result.accumulations
+
+
+async def test_accumulate_filters_by_charge_filter(statement_charge_factory, statement_factory):
+    statement = statement_factory(issued="2026-06-01T10:00:00Z")
+    charges = [
+        statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00")),
+        statement_charge_factory("AGR-1", "SUB-2", statement=statement, price=("2.00", "2.00")),
+    ]
+
+    result = await ChargeAccumulator().accumulate(
+        _aiter(charges), StatementChargeFilter.for_subscriptions(("SUB-1",))
+    )
+
+    assert result.charge_count == 1
+    assert list(result.accumulations) == [("AGR-1", "SUB-1", 2026, 6)]
+
+
+def test_filter_matches_selected_subscription(statement_charge_factory):
+    charge_filter = StatementChargeFilter(("SUB-1",))
+    selected = statement_charge_factory("AGR-1", "SUB-1")
+    other = statement_charge_factory("AGR-1", "SUB-2")
+
+    result = (charge_filter.matches(selected), charge_filter.matches(other))
+
+    assert result == (True, False)
+
+
+def test_filter_is_none_when_no_subscriptions():
+    result = StatementChargeFilter.for_subscriptions(())
+
+    assert result is None
 
 
 def test_report_prints_summary_and_table(capsys):

@@ -42,11 +42,56 @@ async def test_persist_skips_bucket_without_month(mocker):
     agreement_repo.accumulate.assert_not_called()
 
 
+async def test_persist_restricts_agreement_writes(mocker):
+    reset = ChargeAccumulation("AGR-1", "SUB-1", 2026, 6, Decimal("1.50"))
+    sibling = ChargeAccumulation("AGR-2", "SUB-2", 2026, 6, Decimal("1.00"))
+    subscription_repo = mocker.AsyncMock()
+    agreement_repo = mocker.AsyncMock()
+
+    await AccumulationPersister(subscription_repo, agreement_repo).persist(  # act
+        [reset, sibling], frozenset(("AGR-1",))
+    )
+
+    # both subscription buckets are written, only AGR-1's agreement bucket is
+    written = agreement_repo.accumulate.call_args.args[0]
+    assert subscription_repo.accumulate.call_count == 2
+    assert agreement_repo.accumulate.call_count == 1
+    assert written.agreement_id == "AGR-1"
+
+
+async def test_persist_empty_set_skips_agreement_table(mocker):
+    bucket = ChargeAccumulation("AGR-1", "SUB-1", 2026, 6, Decimal("1.50"))
+    subscription_repo = mocker.AsyncMock()
+    agreement_repo = mocker.AsyncMock()
+
+    await AccumulationPersister(subscription_repo, agreement_repo).persist(  # act
+        [bucket], frozenset()
+    )
+
+    subscription_repo.accumulate.assert_called_once()
+    agreement_repo.accumulate.assert_not_called()
+
+
 async def test_persist_does_nothing_when_empty(mocker):
     subscription_repo = mocker.AsyncMock()
     agreement_repo = mocker.AsyncMock()
 
     await AccumulationPersister(subscription_repo, agreement_repo).persist([])  # act
+
+    subscription_repo.accumulate.assert_not_called()
+    agreement_repo.accumulate.assert_not_called()
+
+
+async def test_persist_dry_run_skips_writes(mocker):
+    bucket = ChargeAccumulation("AGR-1", "SUB-1", 2026, 6, Decimal("1.50"), Decimal("2.00"))
+    subscription_repo = mocker.AsyncMock()
+    agreement_repo = mocker.AsyncMock()
+
+    await AccumulationPersister(
+        subscription_repo,
+        agreement_repo,
+        dry_run=True,
+    ).persist([bucket])  # act
 
     subscription_repo.accumulate.assert_not_called()
     agreement_repo.accumulate.assert_not_called()

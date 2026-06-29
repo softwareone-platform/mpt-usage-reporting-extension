@@ -63,6 +63,6 @@ async def _delete(
                 api_service.client.commerce.subscriptions,
             ).delete(scope)
             execution.record_result(
-                subscription_deleted=outcome.subscription_deleted,
-                agreement_deleted=outcome.agreement_deleted,
+                subscription_deleted=len(outcome.subscriptions),
+                agreement_deleted=len(outcome.agreements),
             )

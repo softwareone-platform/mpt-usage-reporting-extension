@@ -57,14 +57,21 @@ class AccumulationCleaner:
         self,
         subscription_repo: SubscriptionAccumulationRepository,
         agreement_repo: AgreementAccumulationRepository,
+        *,
+        dry_run: bool = False,
     ) -> None:
         self._subscription_repo = subscription_repo
         self._agreement_repo = agreement_repo
+        self._dry_run = dry_run
 
     async def cleanup(self, year: Year, month: Month) -> CleanupOutcome:
         """Prune both tables to the 18-month window ending at (year, month), then report."""
-        subscription_deleted = await self._subscription_repo.prune(year, month)
-        agreement_deleted = await self._agreement_repo.prune(year, month)
+        if self._dry_run:
+            subscription_deleted = 0
+            agreement_deleted = 0
+        else:
+            subscription_deleted = await self._subscription_repo.prune(year, month)
+            agreement_deleted = await self._agreement_repo.prune(year, month)
         outcome = CleanupOutcome(year, month, subscription_deleted, agreement_deleted)
         logger.info(
             "Pruned %d subscription and %d agreement accumulation row(s) older than %d-%02d",

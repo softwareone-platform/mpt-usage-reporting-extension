@@ -463,6 +463,33 @@ async def test_subscriptions_by_agreement_empty(subscription_repo):
     assert not result
 
 
+async def test_agreements_by_subscription_distinct(
+    subscription_repo, charge_factory, decimal_first, decimal_zero, month, other_month
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", agreement_id="AGR-1")
+    )
+    await subscription_repo.accumulate(
+        charge_factory(
+            decimal_first,
+            decimal_zero,
+            subscription_id="SUB-1",
+            agreement_id="AGR-1",
+            month=other_month,
+        )
+    )
+
+    result = [agr async for agr in subscription_repo.agreements_by_subscription("SUB-1")]  # act
+
+    assert result == ["AGR-1"]
+
+
+async def test_agreements_by_subscription_empty(subscription_repo):
+    result = [agr async for agr in subscription_repo.agreements_by_subscription("SUB-9")]  # act
+
+    assert not result
+
+
 async def test_prune_drops_old_subscription_rows(
     subscription_repo, charge_factory, decimal_first, decimal_zero, subscription_id
 ):
