@@ -31,6 +31,16 @@ class Charge:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutionRecord:
+    """One recorded command execution, as read back for the status report."""
+
+    command: str
+    status: str
+    started_at: str
+    completed_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class PriceEstimate:
     """Current-month (PPxM/SPxM) and trailing-year (PPxY/SPxY) purchase/sales sums."""
 

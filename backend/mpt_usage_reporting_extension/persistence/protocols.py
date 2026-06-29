@@ -4,6 +4,7 @@ from typing import Protocol
 
 from mpt_usage_reporting_extension.persistence.models import (
     Charge,
+    ExecutionRecord,
     SubscriptionMonthlyAccumulation,
 )
 from mpt_usage_reporting_extension.types import (
@@ -74,6 +75,10 @@ class ExecutionRepository(Protocol):
         self, execution_id: int, status: ExecutionStatus, result: Mapping[str, object]
     ) -> None:
         """Stamp completed_at, final status, and the JSON result on the execution row."""
+        ...
+
+    def recent(self, limit: int) -> AsyncIterator[ExecutionRecord]:
+        """Yield the most recent executions (newest first), capped at limit."""
         ...
 
 

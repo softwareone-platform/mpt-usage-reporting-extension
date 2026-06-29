@@ -1,8 +1,9 @@
 import json
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 
 import aiosqlite
 
+from mpt_usage_reporting_extension.persistence.models import ExecutionRecord
 from mpt_usage_reporting_extension.persistence.sqlite.repositories import utc_now_iso
 from mpt_usage_reporting_extension.types import Command, ExecutionStatus, StatementStatus
 
@@ -21,6 +22,10 @@ _INSERT_STATEMENT = (
 _FINISH_STATEMENT = (
     "UPDATE statement_processing SET status = :status, ended_at = :ended_at, "
     "failure_message = :failure_message WHERE id = :id"
+)
+_RECENT_EXECUTIONS = (
+    "SELECT command, status, started_at, completed_at FROM command_execution "
+    "ORDER BY started_at DESC, id DESC LIMIT :limit"
 )
 
 
@@ -66,6 +71,17 @@ class ExecutionRepository:
             },
         )
         await cursor.close()
+
+    async def recent(self, limit: int) -> AsyncIterator[ExecutionRecord]:
+        """Yield the most recent executions (newest first), capped at limit."""
+        async with self._connection.execute(_RECENT_EXECUTIONS, {"limit": limit}) as cursor:
+            async for row in cursor:
+                yield ExecutionRecord(
+                    command=row["command"],
+                    status=row["status"],
+                    started_at=row["started_at"],
+                    completed_at=row["completed_at"],
+                )
 
 
 class StatementProcessingRepository:

@@ -45,6 +45,20 @@ async def test_finish_stamps_status_and_result(db, executions):
     assert json.loads(row["result"]) == {"deleted": 3}
 
 
+async def test_recent_returns_newest_first(db, executions):
+    run_id = await executions.start(Command.RUN, {})
+    await executions.finish(run_id, ExecutionStatus.SUCCESS, {})
+    cleanup_id = await executions.start(Command.CLEANUP, {})
+    await executions.finish(cleanup_id, ExecutionStatus.FAILED, {})
+    await executions.start(Command.DELETE, {})
+
+    result = [record async for record in executions.recent(2)]
+
+    assert [record.command for record in result] == [Command.DELETE, Command.CLEANUP]
+    assert result[0].completed_at is None
+    assert result[1].status == ExecutionStatus.FAILED
+
+
 async def test_statement_start_inserts_processing_row(db, statements):
     execution_id = 42
 
