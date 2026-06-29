@@ -98,6 +98,11 @@ class EstimateUploadReport:
         """Whether any subscription failed to upload."""
         return self._failed > 0
 
+    @property
+    def failed_count(self) -> int:
+        """How many subscriptions failed to upload."""
+        return self._failed
+
     def _summary(self) -> str:
         if not (self._ok or self._failed):
             return "Uploaded estimates to 0 subscription(s), 0 failed"

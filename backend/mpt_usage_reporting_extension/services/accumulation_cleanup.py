@@ -1,5 +1,6 @@
 import datetime as dt
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import typer
@@ -12,7 +13,8 @@ from mpt_usage_reporting_extension.persistence.sqlite.database import (
     SqliteDatabase,
     resolve_db_path,
 )
-from mpt_usage_reporting_extension.types import Month, Year
+from mpt_usage_reporting_extension.services.execution_tracker import ExecutionTracker
+from mpt_usage_reporting_extension.types import Command, Month, Year
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +77,16 @@ class AccumulationCleaner:
         return outcome
 
 
-async def do_cleanup(anchor: dt.date) -> CleanupOutcome:
+async def do_cleanup(anchor: dt.date, parameters: Mapping[str, object]) -> CleanupOutcome:
     """Open the store and prune both tables to the 18-month window ending at the anchor month."""
     async with SqliteDatabase(resolve_db_path()) as db:
-        return await AccumulationCleaner(
-            db.subscription_repository(), db.agreement_repository()
-        ).cleanup(anchor.year, Month(anchor.month))
+        tracker = ExecutionTracker(db.execution_repository())
+        async with tracker.track(Command.CLEANUP, parameters) as execution:
+            outcome = await AccumulationCleaner(
+                db.subscription_repository(), db.agreement_repository()
+            ).cleanup(anchor.year, Month(anchor.month))
+            execution.record_result(
+                subscription_deleted=outcome.subscription_deleted,
+                agreement_deleted=outcome.agreement_deleted,
+            )
+        return outcome

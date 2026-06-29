@@ -19,6 +19,7 @@ def test_recalculate_invokes_pipeline_with_scope(mocker, runner):
     recalc = pipeline_cls.return_value.recalculate
     recalc.assert_awaited_once()
     assert recalc.await_args.args[0] == SellerSelector("SEL-1")
+    assert recalc.await_args.args[1] == {"product_id": None, "seller_id": "SEL-1"}
     ctx = pipeline_cls.call_args.args[0]
     assert ctx.seller_id == "SEL-1"
     assert ctx.window is None

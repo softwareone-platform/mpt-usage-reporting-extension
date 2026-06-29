@@ -1,16 +1,40 @@
 from decimal import Decimal
 
+import pytest
+
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
     ChargeReport,
     ChargeStreamer,
 )
+from mpt_usage_reporting_extension.services.execution_tracker import StatementProcessingRecorder
+from mpt_usage_reporting_extension.types import StatementStatus
+
+
+@pytest.fixture
+def processing_repo(mocker):
+    return mocker.AsyncMock()
+
+
+@pytest.fixture
+def recorder(processing_repo):
+    return StatementProcessingRecorder(processing_repo, execution_id=7)
+
+
+@pytest.fixture
+def charge_stream(api_service):
+    return _charges(api_service).return_value.stream
 
 
 async def _aiter(records):  # noqa: RUF029  # async generator: enables `async for` over a list
     for record in records:
         yield record
+
+
+async def _aiter_raises(exc):  # noqa: RUF029  # async generator that raises before yielding
+    raise exc
+    yield  # noqa: WPS427  # pragma: no cover  # unreachable; only marks this as a generator
 
 
 async def _drain(charges):
@@ -22,52 +46,84 @@ def _charges(api_service):
     return billing.statements.charges
 
 
-async def test_stream_calls_endpoint_per_statement(api_service, statement_factory):
+async def test_stream_calls_endpoint_per_statement(api_service, recorder, statement_factory):
     statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
     stream = _charges(api_service).return_value.stream
     stream.side_effect = [_aiter([]), _aiter([])]
 
-    await _drain(ChargeStreamer(api_service).stream(statements))  # act
+    await _drain(ChargeStreamer(api_service, recorder).stream(statements))  # act
 
     charges = _charges(api_service)
     assert [call.args[0] for call in charges.call_args_list] == ["BILL-1", "BILL-2"]
 
 
 async def test_stream_attaches_statement_to_each_charge(
-    api_service, statement_factory, statement_charge_factory
+    api_service, recorder, statement_factory, statement_charge_factory
 ):
     statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
     pages = [[statement_charge_factory(), statement_charge_factory()], [statement_charge_factory()]]
     stream = _charges(api_service).return_value.stream
     stream.side_effect = [_aiter(page) for page in pages]
 
-    result = await _drain(ChargeStreamer(api_service).stream(statements))
+    result = await _drain(ChargeStreamer(api_service, recorder).stream(statements))
 
     assert [charge.statement.id for charge in result] == ["BILL-1", "BILL-1", "BILL-2"]
 
 
 async def test_stream_yields_charge_objects(
-    api_service, statement_factory, statement_charge_factory
+    api_service, recorder, statement_factory, statement_charge_factory
 ):
     statements = [statement_factory("BILL-1")]
     charges = [statement_charge_factory(), statement_charge_factory()]
     stream = _charges(api_service).return_value.stream
     stream.side_effect = [_aiter(charges)]
 
-    result = await _drain(ChargeStreamer(api_service).stream(statements))
+    result = await _drain(ChargeStreamer(api_service, recorder).stream(statements))
 
     assert result == charges
 
 
-def test_stream_is_lazy(api_service, statement_factory):
+def test_stream_is_lazy(api_service, recorder, statement_factory):
     statements = [statement_factory("BILL-1")]
     stream = _charges(api_service).return_value.stream
     stream.side_effect = [_aiter([])]
 
-    ChargeStreamer(api_service).stream(statements)  # act
+    ChargeStreamer(api_service, recorder).stream(statements)  # act
 
     charges = _charges(api_service)
     assert charges.call_count == 0
+
+
+async def test_stream_records_each_statement(
+    api_service, recorder, charge_stream, processing_repo, statement_factory
+):
+    statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
+    charge_stream.side_effect = [_aiter([]), _aiter([])]
+
+    await _drain(ChargeStreamer(api_service, recorder).stream(statements))  # act
+
+    assert [call.args for call in processing_repo.start.call_args_list] == [
+        (7, "BILL-1"),
+        (7, "BILL-2"),
+    ]
+    assert [call.args[1] for call in processing_repo.finish.call_args_list] == [
+        StatementStatus.SUCCESS,
+        StatementStatus.SUCCESS,
+    ]
+
+
+async def test_stream_records_failure_on_error(
+    api_service, recorder, charge_stream, processing_repo, statement_factory
+):
+    statements = [statement_factory("BILL-1")]
+    charge_stream.side_effect = [_aiter_raises(RuntimeError("boom"))]
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await _drain(ChargeStreamer(api_service, recorder).stream(statements))
+
+    processing_repo.finish.assert_awaited_once_with(
+        processing_repo.start.return_value, StatementStatus.FAILURE, "boom"
+    )
 
 
 async def test_accumulate_sums_by_full_key(statement_charge_factory, statement_factory):

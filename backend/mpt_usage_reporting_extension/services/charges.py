@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
+from mpt_usage_reporting_extension.services.execution_tracker import StatementProcessingRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,9 @@ _REPORT_HEADERS = ("Agreement ID", "Subscription ID", "Year", "Month", "PPx1", "
 class ChargeStreamer:
     """Stream charges for each selected statement without buffering."""
 
-    def __init__(self, api_service: MPTAPIService) -> None:
+    def __init__(self, api_service: MPTAPIService, recorder: StatementProcessingRecorder) -> None:
         self._api_service = api_service
+        self._recorder = recorder
 
     async def stream(self, statements: list[Statement]) -> AsyncIterator[StatementCharge]:
         """Yield charges for every selected statement, one statement at a time.
@@ -28,13 +30,18 @@ class ChargeStreamer:
         streaming endpoint, so charges are yielded line by line without buffering the
         whole response in memory. The owning statement is attached to each charge as
         ``charge.statement`` so the accumulation month can be derived from it.
+
+        Each statement's streaming is bracketed by a ``statement_processing`` insight row via the
+        recorder. Because the charges are yielded from inside that bracket, an error raised
+        downstream while consuming a statement's charges is attributed to that statement.
         """
         client = self._api_service.client.billing.statements
         for statement in statements:
             logger.info("Streaming charges for statement %s", statement.id)
-            async for charge in client.charges(statement.id).stream():
-                charge.statement = statement
-                yield charge
+            async with self._recorder.record(statement.id):
+                async for charge in client.charges(statement.id).stream():
+                    charge.statement = statement
+                    yield charge
 
 
 class ChargeAccumulator:

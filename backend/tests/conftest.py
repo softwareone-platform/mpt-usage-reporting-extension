@@ -36,6 +36,28 @@ def schema():
             PRIMARY KEY (agreement_id, year, month)
         )
         """,
+        """
+        CREATE TABLE command_execution (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            command TEXT NOT NULL,
+            parameters TEXT NOT NULL,
+            status TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            completed_at TEXT,
+            result TEXT
+        )
+        """,
+        """
+        CREATE TABLE statement_processing (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            execution_id INTEGER NOT NULL REFERENCES command_execution(id),
+            statement_id TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            status TEXT NOT NULL,
+            failure_message TEXT
+        )
+        """,
     )
 
 

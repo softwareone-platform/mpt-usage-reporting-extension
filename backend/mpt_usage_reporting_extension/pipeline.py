@@ -1,5 +1,5 @@
 import datetime as dt
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 import typer
 from mpt_api_client.resources.billing.statements import Statement
@@ -25,10 +25,16 @@ from mpt_usage_reporting_extension.services.charges import (
 )
 from mpt_usage_reporting_extension.services.estimates_uploader import (
     EstimatesUploader,
+    EstimateUploadReport,
     updatable_subscription_ids,
 )
+from mpt_usage_reporting_extension.services.execution_tracker import (
+    Execution,
+    ExecutionTracker,
+    StatementProcessingRecorder,
+)
 from mpt_usage_reporting_extension.services.statements import StatementReport, StatementSelector
-from mpt_usage_reporting_extension.types import Month
+from mpt_usage_reporting_extension.types import Command, Month
 from mpt_usage_reporting_extension.utils import last_month
 
 
@@ -38,12 +44,17 @@ class UsageReportingPipeline:  # noqa: WPS214
     def __init__(self, ctx: RunContext) -> None:
         self._ctx = ctx
 
-    async def run(self) -> None:
+    async def run(self, parameters: Mapping[str, object]) -> None:
         """Collect charges, persist them, update estimates, then prune old rows."""
         async with SqliteDatabase(resolve_db_path()) as db:
-            await self._run(db)
+            tracker = ExecutionTracker(db.execution_repository())
+            async with tracker.track(Command.RUN, parameters) as execution:
+                await self._run(db, execution)
+                failed = execution.has_errors
+            if failed:
+                raise typer.Exit(code=1)
 
-    async def recalculate(self, scope: Selector | None) -> None:
+    async def recalculate(self, scope: Selector | None, parameters: Mapping[str, object]) -> None:
         """Delete the scope's buckets, then perform a regular run.
 
         Unlike ``run`` (additive), the scope's buckets are deleted first, so re-runs do not
@@ -51,16 +62,34 @@ class UsageReportingPipeline:  # noqa: WPS214
         the delete it runs the regular pipeline, including retention pruning.
         """
         async with SqliteDatabase(resolve_db_path()) as db:
-            await self._reset(scope, db)
-            await self._run(db)
+            tracker = ExecutionTracker(db.execution_repository())
+            async with tracker.track(Command.RECALCULATE, parameters) as execution:
+                await self._reset(scope, db)
+                await self._run(db, execution)
+                failed = execution.has_errors
+            if failed:
+                raise typer.Exit(code=1)
 
-    async def _run(self, db: SqliteDatabase) -> None:
-        """Collect charges, persist them, update estimates, then prune old rows."""
+    async def _run(self, db: SqliteDatabase, execution: Execution) -> None:
+        """Collect charges, persist them, update estimates, then prune old rows.
+
+        Estimate-upload failures are recorded on the execution handle (``has_errors``) rather than
+        raised here, so the tracked row is finalised as ``completed_with_errors``; the caller turns
+        that flag into a non-zero exit after the tracking context closes.
+        """
+        recorder = StatementProcessingRecorder(db.statement_processing_repository(), execution.id)
         statements = await self._select_statements()
-        accumulations = await self._accumulate_charges(statements)
+        accumulations = list(await self._accumulate_charges(statements, recorder))
         await self._persist(accumulations, db.subscription_repository(), db.agreement_repository())
-        await self._update_estimates(accumulations, db.subscription_repository())
+        report = await self._update_estimates(accumulations, db.subscription_repository())
         await self._cleanup(db.subscription_repository(), db.agreement_repository())
+        execution.record_result(
+            statements=len(statements),
+            accumulations=len(accumulations),
+            estimates_failed=report.failed_count,
+        )
+        if report.has_failures:
+            execution.has_errors = True
 
     async def _reset(self, scope: Selector | None, db: SqliteDatabase) -> None:
         """Delete the scope's stored buckets before re-accumulation.
@@ -89,11 +118,11 @@ class UsageReportingPipeline:  # noqa: WPS214
         return statements
 
     async def _accumulate_charges(
-        self, statements: list[Statement]
+        self, statements: list[Statement], recorder: StatementProcessingRecorder
     ) -> Iterable[ChargeAccumulation]:
         """Stream and accumulate the statements' charges, then render the charge report."""
         totals = await ChargeAccumulator().accumulate(
-            ChargeStreamer(self._ctx.api_service).stream(statements)
+            ChargeStreamer(self._ctx.api_service, recorder).stream(statements)
         )
         ChargeReport(totals).render()
         return totals.accumulations.values()
@@ -111,15 +140,18 @@ class UsageReportingPipeline:  # noqa: WPS214
         self,
         accumulations: Iterable[ChargeAccumulation],
         subscription_repo: SubscriptionAccumulationRepository,
-    ) -> None:
-        """Upload estimates for the run's subscriptions; exit non-zero on failure."""
+    ) -> EstimateUploadReport:
+        """Upload estimates for the run's subscriptions and return the upload report.
+
+        The caller inspects the report's failures; this method no longer exits, so the execution
+        row can be finalised before the process exits non-zero.
+        """
         anchor = last_month(dt.datetime.now(tz=dt.UTC).date())
         report = await EstimatesUploader(
             subscription_repo, self._ctx.api_service.subscriptions
         ).update(updatable_subscription_ids(accumulations), anchor.year, Month(anchor.month))
         report.render()
-        if report.has_failures:
-            raise typer.Exit(code=1)
+        return report
 
     async def _cleanup(
         self,

@@ -40,6 +40,7 @@ def test_delete_deletes_scope_buckets(mocker, runner):
     database.__aexit__ = mocker.AsyncMock(return_value=False)
     mocker.patch.object(cli.commands.delete, "resolve_db_path")
     mocker.patch.object(cli.commands.delete, "SqliteDatabase", return_value=database)
+    database.execution_repository = mocker.Mock(return_value=mocker.AsyncMock())
     deleter = mocker.patch.object(cli.commands.delete, "BucketDeleter").return_value
     deleter.delete = mocker.AsyncMock()
 

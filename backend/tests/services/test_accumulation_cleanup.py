@@ -46,8 +46,9 @@ async def test_do_cleanup_opens_store_and_prunes(mocker):
     agreement_repo.prune.return_value = 1
     database.subscription_repository = mocker.Mock(return_value=subscription_repo)
     database.agreement_repository = mocker.Mock(return_value=agreement_repo)
+    database.execution_repository = mocker.Mock(return_value=mocker.AsyncMock())
 
-    result = await do_cleanup(dt.date(2026, 6, 1))  # act
+    result = await do_cleanup(dt.date(2026, 6, 1), {})  # act
 
     assert result.subscription_deleted == 2
     assert result.agreement_deleted == 1

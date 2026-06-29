@@ -1,12 +1,18 @@
 import datetime as dt
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Protocol
 
 from mpt_usage_reporting_extension.persistence.models import (
     Charge,
     SubscriptionMonthlyAccumulation,
 )
-from mpt_usage_reporting_extension.types import Month, Year
+from mpt_usage_reporting_extension.types import (
+    Command,
+    ExecutionStatus,
+    Month,
+    StatementStatus,
+    Year,
+)
 
 
 class SubscriptionAccumulationRepository(Protocol):  # noqa: WPS214
@@ -54,4 +60,32 @@ class AgreementAccumulationRepository(Protocol):
 
     async def delete(self, *, agreement_id: str | None = None) -> int:
         """Delete agreement buckets for the given scope (no scope deletes every bucket)."""
+        ...
+
+
+class ExecutionRepository(Protocol):
+    """Persist command-execution insight rows."""
+
+    async def start(self, command: Command, parameters: Mapping[str, object]) -> int:
+        """Insert a running execution row and return its id."""
+        ...
+
+    async def finish(
+        self, execution_id: int, status: ExecutionStatus, result: Mapping[str, object]
+    ) -> None:
+        """Stamp completed_at, final status, and the JSON result on the execution row."""
+        ...
+
+
+class StatementProcessingRepository(Protocol):
+    """Persist per-statement processing insight rows."""
+
+    async def start(self, execution_id: int, statement_id: str) -> int:
+        """Insert a processing row and return its id."""
+        ...
+
+    async def finish(
+        self, processing_id: int, status: StatementStatus, failure_message: str | None = None
+    ) -> None:
+        """Stamp ended_at, final status, and optional failure message."""
         ...
