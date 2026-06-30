@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 
+from mpt_usage_reporting_extension.accumulation import StatementChargeFilter
 from mpt_usage_reporting_extension.window import RunWindow
 
 
@@ -13,3 +14,4 @@ class RunContext:
     window: RunWindow | None
     product_ids: tuple[str, ...]
     seller_id: str = ""
+    charge_filter: StatementChargeFilter | None = None

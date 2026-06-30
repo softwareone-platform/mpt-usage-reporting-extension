@@ -5,6 +5,7 @@ import pytest
 from mpt_usage_reporting_extension.services.statements import (
     StatementFilterBuilder,
     StatementReport,
+    StatementScope,
     StatementSelector,
 )
 from mpt_usage_reporting_extension.window import RunWindow
@@ -115,10 +116,21 @@ async def test_select_merges_duplicates_by_id(mocker, statements_api, window):
 def test_filter_omits_window_when_none():
     builder = StatementFilterBuilder()
 
-    result = builder.build(("PRD-9",), "", None, "audit.issued.at", "Issued")
+    result = builder.build(StatementScope(("PRD-9",), ""), None, "audit.issued.at", "Issued")
 
     assert "audit.issued.at" not in str(result)
     assert "eq(status,'Issued')" in str(result)
+
+
+def test_filter_scopes_by_agreement():
+    builder = StatementFilterBuilder()
+    scope = StatementScope(("PRD-9",), "ACC-9", ("AGR-1",))
+
+    result = builder.build(scope, None, "audit.issued.at", "Issued")
+
+    assert "in(agreement.id,('AGR-1'))" in str(result)
+    assert "product.id" not in str(result)
+    assert "seller.id" not in str(result)
 
 
 def test_report_renders_without_window(capsys):

@@ -56,6 +56,7 @@ class UploadOutcome:
     estimate: PriceEstimate | None = None
     exception: BaseException | None = None
     error: str | None = None
+    dry_run: bool = False
 
     def line(self) -> str:
         """The single console line summarizing this outcome."""
@@ -64,7 +65,8 @@ class UploadOutcome:
             return f"{self.subscription_id} FAILED{detail}"
         prices = self.estimate.to_dict()
         body = " ".join(f"{key}={prices[key]:.4f}" for key in _PRICE_KEYS)
-        return f"{self.subscription_id} {body} OK"
+        status = "DRY-RUN" if self.dry_run else "OK"
+        return f"{self.subscription_id} {body} {status}"
 
 
 class EstimateUploadReport:
@@ -74,12 +76,13 @@ class EstimateUploadReport:
     run of any size stays within constant memory.
     """
 
-    def __init__(self, year: Year, month: Month) -> None:
+    def __init__(self, year: Year, month: Month, *, dry_run: bool = False) -> None:
         month_label = str(month).zfill(2)
         self._period = f"{year}-{month_label}"
         self._console = Console()
         self._ok = 0
         self._failed = 0
+        self._dry_run = dry_run
 
     def record(self, outcome: UploadOutcome) -> None:
         """Print the outcome's line and tally it."""
@@ -105,7 +108,14 @@ class EstimateUploadReport:
 
     def _summary(self) -> str:
         if not (self._ok or self._failed):
+            if self._dry_run:
+                return "Dry-run estimates to 0 subscription(s), 0 failed"
             return "Uploaded estimates to 0 subscription(s), 0 failed"
+        if self._dry_run:
+            return (
+                f"Dry-run estimates for {self._period} to "
+                f"{self._ok} subscription(s), {self._failed} failed"
+            )
         return (
             f"Uploaded estimates for {self._period} to "
             f"{self._ok} subscription(s), {self._failed} failed"
@@ -177,11 +187,14 @@ class PriceEstimateProducer:
 class PriceEstimateConsumer:
     """PUT one produced price estimate to MPT and return its outcome; never raises."""
 
-    def __init__(self, subscriptions: SubscriptionService) -> None:
+    def __init__(self, subscriptions: SubscriptionService, *, dry_run: bool = False) -> None:
         self._subscriptions = subscriptions
+        self._dry_run = dry_run
 
     async def consume(self, subscription_id: str, estimate: PriceEstimate) -> UploadOutcome:
         """PUT the estimate and return the outcome; on any error log it and return a failure."""
+        if self._dry_run:
+            return UploadOutcome(subscription_id, estimate=estimate, dry_run=True)
         try:
             await self._subscriptions.update(subscription_id, {"price": estimate.to_dict()})
         except MPTError as exc:
@@ -201,9 +214,12 @@ class EstimatesUploader:
         accumulations: SubscriptionAccumulationRepository,
         subscriptions: SubscriptionService,
         max_concurrency: int = _DEFAULT_MAX_CONCURRENCY,
+        *,
+        dry_run: bool = False,
     ) -> None:
         self._producer = PriceEstimateProducer(_EstimateCalculator(accumulations))
         self._subscriptions = subscriptions
+        self._dry_run = dry_run
         self._semaphore = asyncio.Semaphore(max_concurrency)
 
     async def update(
@@ -217,8 +233,8 @@ class EstimatesUploader:
         Ids are consumed lazily and a slot is reserved before each task is created, so reads,
         tasks, and uploads stay bounded by ``max_concurrency`` regardless of the id count.
         """
-        report = EstimateUploadReport(year, month)
-        consumer = PriceEstimateConsumer(self._subscriptions)
+        report = EstimateUploadReport(year, month, dry_run=self._dry_run)
+        consumer = PriceEstimateConsumer(self._subscriptions, dry_run=self._dry_run)
         async with asyncio.TaskGroup() as group:
             async for subscription_id, estimate in self._producer.produce(
                 subscription_ids, year, month

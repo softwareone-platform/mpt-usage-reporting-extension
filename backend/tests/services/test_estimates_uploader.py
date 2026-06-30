@@ -226,6 +226,15 @@ async def test_consumer_returns_failure_on_unexpected(subscriptions, update, pri
     )
 
 
+async def test_consumer_dry_run_skips_update(subscriptions, update, price_estimate):
+    outcome = await PriceEstimateConsumer(subscriptions, dry_run=True).consume(
+        "SUB-1", price_estimate
+    )  # act
+
+    update.assert_not_called()
+    assert outcome == UploadOutcome("SUB-1", estimate=price_estimate, dry_run=True)
+
+
 def test_report_renders_values_and_statuses(estimate, capsys):
     report = EstimateUploadReport(2026, Month.JUNE)
     report.record(UploadOutcome("SUB-1", estimate=estimate))
@@ -261,3 +270,25 @@ async def test_update_caps_concurrency(subscription_repo, subscriptions, year, m
     await updater.update(subscription_ids, year, month)  # act
 
     assert tracker.peak == 2  # 4 subscriptions, capped at 2 (would be 4 without the bound)
+
+
+async def test_update_dry_run_skips_api_updates(
+    subscription_repo, subscriptions, year, month, capsys
+):
+    updater = EstimatesUploader(subscription_repo, subscriptions, dry_run=True)
+
+    report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
+    report.render()
+    out = capsys.readouterr().out
+
+    subscriptions.update.assert_not_called()
+    assert not report.has_failures
+    assert "SUB-1 PPxM=1.0000 SPxM=1.0000 PPxY=1.0000 SPxY=1.0000 DRY-RUN" in out
+    assert "SUB-2 PPxM=1.0000 SPxM=1.0000 PPxY=1.0000 SPxY=1.0000 DRY-RUN" in out
+    assert "Dry-run estimates for 2026-06 to 2 subscription(s), 0 failed" in out
+
+
+def test_report_summarizes_empty_dry_run(capsys):
+    EstimateUploadReport(2026, Month.JUNE, dry_run=True).render()  # act
+
+    assert "Dry-run estimates to 0 subscription(s), 0 failed" in capsys.readouterr().out

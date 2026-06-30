@@ -47,6 +47,10 @@ class SubscriptionAccumulationRepository(Protocol):  # noqa: WPS214
         """Yield each distinct subscription id currently stored, optionally for one agreement."""
         ...
 
+    def agreements_by_subscription(self, subscription_id: str) -> AsyncIterator[str]:
+        """Yield each distinct agreement id stored for one subscription."""
+        ...
+
 
 class AgreementAccumulationRepository(Protocol):
     """Persist monthly accumulation totals per agreement bucket."""

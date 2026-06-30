@@ -36,6 +36,22 @@ async def test_cleanup_reports_the_summary(mocker, capsys):
     assert "2026-06" in out
 
 
+async def test_cleanup_dry_run_skips_prune_calls(mocker):
+    subscription_repo = mocker.AsyncMock()
+    agreement_repo = mocker.AsyncMock()
+
+    result = await AccumulationCleaner(
+        subscription_repo,
+        agreement_repo,
+        dry_run=True,
+    ).cleanup(2026, 6)  # act
+
+    assert result.subscription_deleted == 0
+    assert result.agreement_deleted == 0
+    subscription_repo.prune.assert_not_called()
+    agreement_repo.prune.assert_not_called()
+
+
 async def test_do_cleanup_opens_store_and_prunes(mocker):
     database = mocker.patch(
         "mpt_usage_reporting_extension.services.accumulation_cleanup.SqliteDatabase"

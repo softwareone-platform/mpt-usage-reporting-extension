@@ -41,10 +41,10 @@ as the `mpt-billing-subscription-usage` console script (`pyproject.toml` `[proje
   agreement bucket aggregates its siblings). See `services/bucket_clean.py` (`BucketCleaner`).
 - `recalculate` — rebuild a scope idempotently: `delete` the scope's buckets, then run the normal
   fill (select -> accumulate -> persist -> push estimates) so re-runs do not double-count. Optional
-  `--product-id` / `--seller-id` (none = all configured products); no date window — the re-fill
-  selects **all** of the scope's statements (`StatementSelector` omits the date filter when given a
-  `None` window). Retention pruning is skipped; `pipeline.recalculate` reuses every `run` stage and
+  `--product-id` / `--seller-id` (none = all configured products); requires `--from-date` and
+  `--till-date` to bound statement selection. `pipeline.recalculate` reuses every `run` stage and
   adds only the reset step.
+  `--dry-run` previews execution and exits before any delete/persist/push/cleanup mutation.
 
 ### Run data flow
 
