@@ -57,7 +57,7 @@ stages:
               - template: aks-docker-templates/helm-build-steps.yaml@templates
                 parameters:
                   buildNumber: $(buildVersion)
-                  gitRepositoryName: github--mpt-extension-usage-reporting
+                  gitRepositoryName: github--mpt-usage-reporting-extension
                   repository: $(appName)
                   workingDirectory: helm/$(appName)
                   skipImagePush: ${{ eq(variables['Build.Reason'], 'PullRequest') }}
