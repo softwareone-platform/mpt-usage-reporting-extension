@@ -4,9 +4,9 @@
 cliVersion: 2.4.0
 owner: turing
 git:
-  repository: mpt-usage-reporting-extension
+  repository: mpt-extension-usage-reporting
 image:
-  repository: /mpt-usage-reporting-extension
+  repository: /mpt-extension-usage-reporting
   pullPolicy: IfNotPresent
 
 nameOverride: ""
@@ -30,7 +30,7 @@ ingress:
   gateways:
     - pyra/ops-pyc-cluster-gateway
   forward:
-    - match: /mpt-usage-reporting-extension-api/
+    - match: /mpt-extension-usage-reporting-api/
       rewrite: /
 
 resources: {}

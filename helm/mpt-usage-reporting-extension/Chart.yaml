@@ -1,5 +1,5 @@
 apiVersion: v2
-name: mpt-usage-reporting-extension
+name: mpt-extension-usage-reporting
 description: Umbrella chart for the MPT usage reporting extension (api + worker subcharts)
 type: application
 
@@ -12,7 +12,7 @@ version: 0.1.0
 appVersion: "6.0.0"
 
 dependencies:
-  - name: mpt-usage-reporting-extension-api
+  - name: mpt-extension-usage-reporting-api
     version: 0.1.0
-  - name: mpt-usage-reporting-extension-worker
+  - name: mpt-extension-usage-reporting-worker
     version: 0.1.0

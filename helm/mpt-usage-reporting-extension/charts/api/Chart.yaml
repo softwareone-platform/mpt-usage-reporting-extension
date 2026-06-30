@@ -1,5 +1,5 @@
 apiVersion: v2
-name: mpt-usage-reporting-extension-api
+name: mpt-extension-usage-reporting-api
 description: API and event-handling service for the MPT usage reporting extension
 type: application
 

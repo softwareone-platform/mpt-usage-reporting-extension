@@ -18,7 +18,7 @@ spec:
         app.pyracloud.com/access-policy-audience: {{ .Values.accessPolicyAudience }}
         {{- include "common.labels" . | nindent 8 }}
     spec:
-      serviceAccountName: mpt-usage-reporting-extension-sa
+      serviceAccountName: mpt-extension-usage-reporting-sa
       containers:
         - name: main
           securityContext:

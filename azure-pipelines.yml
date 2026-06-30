@@ -13,7 +13,7 @@ resources:
 
 variables:
   - name: appName
-    value: mpt-usage-reporting-extension
+    value: mpt-extension-usage-reporting
 
 stages:
   - stage: prepare
@@ -57,7 +57,7 @@ stages:
               - template: aks-docker-templates/helm-build-steps.yaml@templates
                 parameters:
                   buildNumber: $(buildVersion)
-                  gitRepositoryName: github--mpt-usage-reporting-extension
+                  gitRepositoryName: github--mpt-extension-usage-reporting
                   repository: $(appName)
                   workingDirectory: helm/$(appName)
                   skipImagePush: ${{ eq(variables['Build.Reason'], 'PullRequest') }}

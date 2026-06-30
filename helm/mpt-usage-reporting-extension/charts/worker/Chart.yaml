@@ -1,5 +1,5 @@
 apiVersion: v2
-name: mpt-usage-reporting-extension-worker
+name: mpt-extension-usage-reporting-worker
 description: Scheduled CronJob workloads for the MPT usage reporting extension
 type: application
 
