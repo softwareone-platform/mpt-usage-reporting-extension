@@ -9,3 +9,10 @@ data:
   MPT_API_BASE_URL: {{ .Values.global.MpBaseUrl | quote }}
   MPT_PRODUCTS_IDS: {{ .Values.global.MpProductsIds | quote }}
   MPT_BSU_DB_PATH: {{ .Values.global.MptBsuDbPath | quote }}
+  MPT_TOOL_STORAGE_TYPE: {{ .Values.global.MpToolStorageType | quote }}
+  SDK_EXTENSION_ID: {{ .Values.global.SdkExtensionId | quote }}
+  SDK_EXTENSION_URL: {{ .Values.global.SdkExtensionUrl | quote }}
+  SDK_OTEL_SERVICE_NAME: {{ .Values.global.SdkOtelServiceName | quote }}
+  SDK_OTEL_EXPORTERS: {{ .Values.global.SdkOtelExporters | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.global.OtelExporterOtlpEndpoint | quote }}
+  OTEL_EXPORTER_OTLP_PROTOCOL: {{ .Values.global.OtelExporterOtlpProtocol | quote }}
