@@ -25,6 +25,14 @@ global:
   MpProductsIds: default
   # MPT_BSU_DB_PATH: SQLite database path. Should live under persistence.mountPath.
   MptBsuDbPath: /data/bsu.db
+  MpToolStorageType: local
+  SdkExtensionId: EXT-2415-5207
+  SdkExtensionUrl: https://EXT-2415-5207.ext.s1.show
+  SdkExtensionApiKey: ZGVmYXVsdA==
+  SdkOtelServiceName: Swo.Extension.Demo
+  SdkOtelExporters: otlp
+  OtelExporterOtlpEndpoint: http://jaeger:4318
+  OtelExporterOtlpProtocol: http/protobuf
 
   # Shared persistent storage mounted at /data for the SQLite database. It is
   # mounted by the api deployment, the worker deployment, and the worker CronJob,
