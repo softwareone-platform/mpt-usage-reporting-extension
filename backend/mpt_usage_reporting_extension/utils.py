@@ -1,16 +1,17 @@
 import datetime as dt
 import re
 
-_NON_ALPHANUMERIC = re.compile(r"[^0-9A-Za-z]")
+_DISALLOWED_ID_CHARS = re.compile(r"[^0-9A-Za-z-]")
 
 
 def sanitize_id(raw_id: str) -> str:
-    """Drop non-alphanumeric characters from an id before logging it (Sonar python:S5145).
+    """Drop disallowed characters from an id before logging it (Sonar python:S5145).
 
-    User-controlled ids are logged verbatim otherwise; stripping everything but ASCII letters and
-    digits removes the CR/LF (and other control) characters that would let a caller forge log lines.
+    User-controlled ids are logged verbatim otherwise; keeping only ASCII letters, digits, and the
+    ``-`` used by ids such as ``AGR-123-456`` removes the CR/LF (and other control) characters that
+    would let a caller forge log lines.
     """
-    return _NON_ALPHANUMERIC.sub("", raw_id)
+    return _DISALLOWED_ID_CHARS.sub("", raw_id)
 
 
 def to_date(parsed: dt.datetime | None) -> dt.date | None:
