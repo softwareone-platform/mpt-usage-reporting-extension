@@ -2,7 +2,7 @@
 # `global` is shared with the api and worker subcharts; the top-level label keys
 # are used by the parent-level PersistentVolumeClaim.
 
-owner: turing
+owner: sirius
 type: product
 cliVersion: 2.4.0
 git:
