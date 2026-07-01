@@ -1,8 +1,8 @@
-# Parent chart values for mpt-usage-reporting-extension.
+# Parent chart values for mpt-extension-usage-reporting.
 # `global` is shared with the api and worker subcharts; the top-level label keys
 # are used by the parent-level PersistentVolumeClaim.
 
-owner: turing
+owner: sirius
 type: product
 cliVersion: 2.4.0
 git:
@@ -40,7 +40,7 @@ global:
   # are co-scheduled on one node.
   persistence:
     enabled: true
-    claimName: mpt-usage-reporting-extension-data
+    claimName: mpt-extension-usage-reporting-data
     mountPath: /data
     size: 1Gi
     accessMode: ReadWriteMany
@@ -50,7 +50,7 @@ global:
     # Use an existing PVC instead of creating one. When set, no PVC is created.
     # Provisioned by Terraform in ops-platform-infra (module "mpt_usage_reporting_pv")
     # so the volume + data survive helm uninstall/reinstall. Must equal the TF pvc_name.
-    existingClaim: mpt-usage-reporting-extension-data
+    existingClaim: mpt-extension-usage-reporting-data
 
   # CronJobs keyed by name (rendered by the worker subchart) as
   # "{worker-fullname}-cronjob-{name}" running {command} on {schedule}.

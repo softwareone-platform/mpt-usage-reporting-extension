@@ -25,7 +25,7 @@ spec:
           labels:
             azure.workload.identity/use: "true"
         spec:
-          serviceAccountName: mpt-usage-reporting-extension-sa
+          serviceAccountName: mpt-extension-usage-reporting-sa
           containers:
             - name: {{ $name }}
               securityContext:
