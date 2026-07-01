@@ -29,7 +29,7 @@ global:
   SdkExtensionId: EXT-2415-5207
   SdkExtensionUrl: https://EXT-2415-5207.ext.s1.show
   SdkExtensionApiKey: ZGVmYXVsdA==
-  SdkOtelServiceName: Swo.Extension.Demo
+  SdkOtelServiceName: Swo.Extension.UsageReporting
   SdkOtelExporters: otlp
   OtelExporterOtlpEndpoint: http://jaeger:4318
   OtelExporterOtlpProtocol: http/protobuf
