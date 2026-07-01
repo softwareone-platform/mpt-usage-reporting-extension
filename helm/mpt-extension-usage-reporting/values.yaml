@@ -6,7 +6,7 @@ owner: turing
 type: product
 cliVersion: 2.4.0
 git:
-  repository: mpt-extension-usage-reporting
+  repository: mpt-usage-reporting-extension
 
 global:
   # Registry prefix prepended to image.repository (e.g. "myregistry.azurecr.io").
