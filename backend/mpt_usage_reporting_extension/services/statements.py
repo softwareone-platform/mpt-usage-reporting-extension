@@ -6,11 +6,13 @@ from typing import Any
 
 import typer
 from mpt_api_client import RQLQuery
+from mpt_api_client.exceptions import MPTError
 from mpt_api_client.resources.billing.statements import Statement
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 from rich.console import Console
 from rich.table import Table
 
+from mpt_usage_reporting_extension.exceptions import UpstreamStatementError
 from mpt_usage_reporting_extension.window import RunWindow
 
 logger = logging.getLogger(__name__)
@@ -121,10 +123,18 @@ class StatementSelector:
         """Select the statements of one audit/status pass, keyed by statement id."""
         query = self._filter_builder.build(scope, window, audit_field, status)
         statements = self._api_service.client.billing.statements
-        return {
-            statement.id: statement
-            async for statement in statements.filter(query).select(*_SELECT_FIELDS).iterate()
-        }
+        selected: dict[str, Statement] = {}
+        try:
+            async for statement in statements.filter(query).select(*_SELECT_FIELDS).iterate():
+                selected[statement.id] = statement
+        except MPTError as exc:
+            logger.warning(
+                "Upstream error selecting %s statements by %s: %s", status, audit_field, exc
+            )
+            raise UpstreamStatementError(
+                f"Failed to select {status} statements by {audit_field}"
+            ) from exc
+        return selected
 
 
 class StatementFilterBuilder:

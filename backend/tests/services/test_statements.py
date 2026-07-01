@@ -1,7 +1,9 @@
 import datetime as dt
 
 import pytest
+from mpt_api_client.exceptions import MPTError
 
+from mpt_usage_reporting_extension.exceptions import UpstreamStatementError
 from mpt_usage_reporting_extension.services.statements import (
     StatementFilterBuilder,
     StatementReport,
@@ -14,6 +16,11 @@ from mpt_usage_reporting_extension.window import RunWindow
 async def _aiter(records):  # noqa: RUF029  # async generator: enables `async for` over a list
     for record in records:
         yield record
+
+
+async def _aiter_raises(exc):  # noqa: RUF029  # async generator that raises before yielding
+    raise exc
+    yield  # noqa: WPS427  # pragma: no cover  # unreachable; only marks this as a generator
 
 
 def _queries(api_service):
@@ -111,6 +118,21 @@ async def test_select_merges_duplicates_by_id(mocker, statements_api, window):
     statements = await StatementSelector(api_service).select(window, ("PRD-1",), "")  # act
 
     assert len(statements) == 1
+
+
+async def test_select_wraps_upstream_error(statements_api, window, caplog):
+    api_service = statements_api()
+    statements = api_service.client.billing.statements
+    selected = statements.filter.return_value.select
+    selected.return_value.iterate.side_effect = [
+        _aiter_raises(MPTError("boom")),
+        _aiter_raises(MPTError("boom")),
+    ]
+
+    with pytest.raises(UpstreamStatementError):
+        await StatementSelector(api_service).select(window, ("PRD-1",), "")
+
+    assert "Upstream error selecting" in caplog.text
 
 
 def test_filter_omits_window_when_none():

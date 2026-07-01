@@ -3,8 +3,10 @@ from collections.abc import AsyncIterator
 from typing import override
 
 from mpt_api_client import RQLQuery
+from mpt_api_client.exceptions import MPTError
 from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
 
+from mpt_usage_reporting_extension.exceptions import UpstreamSubscriptionError
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
     SubscriptionAccumulationRepository,
@@ -207,9 +209,15 @@ class BucketDeleter:  # noqa: WPS214
     async def _agreement_ids(self, query: RQLQuery) -> AsyncIterator[str]:
         """Stream the distinct agreement ids of the subscriptions matching the query."""
         seen: set[str] = set()
-        async for sub in self._subscriptions.filter(query).select("agreement.id").iterate():
-            agreement = getattr(sub, "agreement", None)
-            agreement_id = getattr(agreement, "id", None)
-            if isinstance(agreement_id, str) and agreement_id not in seen:
-                seen.add(agreement_id)
-                yield agreement_id
+        try:
+            async for sub in self._subscriptions.filter(query).select("agreement.id").iterate():
+                agreement = getattr(sub, "agreement", None)
+                agreement_id = getattr(agreement, "id", None)
+                if isinstance(agreement_id, str) and agreement_id not in seen:
+                    seen.add(agreement_id)
+                    yield agreement_id
+        except MPTError as exc:
+            logger.warning("Upstream error resolving agreement ids from subscriptions: %s", exc)
+            raise UpstreamSubscriptionError(
+                "Failed to resolve agreement ids from subscriptions"
+            ) from exc
