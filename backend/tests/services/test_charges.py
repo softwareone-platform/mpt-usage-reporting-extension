@@ -1,12 +1,14 @@
 from decimal import Decimal
 
 import pytest
+from mpt_api_client.exceptions import MPTError
 
 from mpt_usage_reporting_extension.accumulation import (
     ChargeAccumulation,
     ChargeTotals,
     StatementChargeFilter,
 )
+from mpt_usage_reporting_extension.exceptions import UpstreamStatementError
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
     ChargeReport,
@@ -128,6 +130,18 @@ async def test_stream_records_failure_on_error(
     processing_repo.finish.assert_awaited_once_with(
         processing_repo.start.return_value, StatementStatus.FAILURE, "boom"
     )
+
+
+async def test_stream_wraps_upstream_error(
+    api_service, recorder, charge_stream, statement_factory, caplog
+):
+    statements = [statement_factory("BILL-1")]
+    charge_stream.side_effect = [_aiter_raises(MPTError("boom"))]
+
+    with pytest.raises(UpstreamStatementError, match="BILL-1"):
+        await _drain(ChargeStreamer(api_service, recorder).stream(statements))
+
+    assert "Upstream error streaming charges for statement BILL-1" in caplog.text
 
 
 async def test_accumulate_sums_by_full_key(statement_charge_factory, statement_factory):

@@ -1,14 +1,17 @@
 import asyncio
 import datetime as dt
+import logging
 from collections.abc import AsyncIterator
 from typing import Annotated, assert_never
 
 import typer
 from mpt_api_client import RQLQuery
+from mpt_api_client.exceptions import MPTError
 from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 
 from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
+from mpt_usage_reporting_extension.exceptions import UpstreamSubscriptionError
 from mpt_usage_reporting_extension.mpt_client import build_service
 from mpt_usage_reporting_extension.persistence.protocols import (
     SubscriptionAccumulationRepository,
@@ -29,6 +32,8 @@ from mpt_usage_reporting_extension.services.estimates_uploader import EstimatesU
 from mpt_usage_reporting_extension.types import Month
 from mpt_usage_reporting_extension.utils import last_month
 
+logger = logging.getLogger(__name__)
+
 
 class _ApiTargetResolver:
     """Enumerate the API subscriptions of a product or seller."""
@@ -39,8 +44,12 @@ class _ApiTargetResolver:
 
     async def candidates(self) -> AsyncIterator[str]:
         """Stream the matching subscription ids from the API."""
-        async for sub in self._subscriptions.filter(self._query).select("id").iterate():
-            yield sub.id
+        try:
+            async for sub in self._subscriptions.filter(self._query).select("id").iterate():
+                yield sub.id
+        except MPTError as exc:
+            logger.warning("Upstream error resolving subscription ids: %s", exc)
+            raise UpstreamSubscriptionError("Failed to resolve subscription ids") from exc
 
 
 class _SubscriptionTargetResolver:

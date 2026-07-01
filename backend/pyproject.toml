@@ -92,9 +92,10 @@ per-file-ignores = [
   "*tests/**:WPS202,WPS432,WPS211,WPS118,WPS204,WPS430",
   # `utils` is a wemake-blacklisted module name, but it's the agreed home for shared helpers.
   "*utils.py:WPS100",
-  # The push-estimates command co-locates its selectors and one resolver class per selector.
+  # The push-estimates command co-locates its selectors and one resolver class per selector, and
+  # the API resolver wraps upstream errors, putting it one collaborator over the import cap.
   # Scope to the source path so it doesn't shadow the `*tests/**` ignores on the test module.
-  "*cli/commands/push_estimates_by_id.py:WPS202",
+  "*cli/commands/push_estimates_by_id.py:WPS202,WPS201",
   # The pipeline orchestrates every stage, so it sits one collaborator over the import cap.
   "*pipeline.py:WPS201",
 ]

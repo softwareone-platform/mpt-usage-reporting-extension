@@ -111,6 +111,13 @@ The store must therefore be configured for safe multi-writer access:
 - **API routes** `GET /api/v2/agreements/{id}` and `POST /api/v2/agreements/{id}/sync`;
 - **plug routes** — register the agreement UI plugs.
 
+Both agreements routes fetch from the Marketplace API through `mpt_api_service`. Upstream
+`mpt-api-client` failures are not SDK `APIError`s, so `agreements.py` translates them
+(`_as_api_error`): `MPTHttpError` 404/401/403 map to `NotFoundError`/`UnauthorizedError`/
+`ForbiddenError`, and any other status, network, or retry error maps to `UpstreamServiceError`.
+`get_agreement` and `sync_agreement` therefore return **404/401/403/502** accordingly instead of
+a blanket 500.
+
 ## Frontend
 
 `frontend/` is a TypeScript/React plug UI (esbuild) providing the agreement

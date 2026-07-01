@@ -1,7 +1,29 @@
 import datetime as dt
 
 # `utils` is a wemake-blacklisted module name (WPS100); importing from it raises WPS347.
-from mpt_usage_reporting_extension.utils import last_month, to_date  # noqa: WPS347
+from mpt_usage_reporting_extension.utils import (  # noqa: WPS347
+    last_month,
+    sanitize_id,
+    to_date,
+)
+
+
+def test_sanitize_id_keeps_alphanumerics():
+    result = sanitize_id("AGR1234")
+
+    assert result == "AGR1234"
+
+
+def test_sanitize_id_strips_non_alphanumerics():
+    result = sanitize_id("AGR-1234")
+
+    assert result == "AGR1234"
+
+
+def test_sanitize_id_removes_newline_forgery():
+    result = sanitize_id("AGR-1\n2026 INFO forged entry")
+
+    assert result == "AGR12026INFOforgedentry"
 
 
 def test_to_date_narrows_datetime():

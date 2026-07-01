@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 from mpt_api_client import RQLQuery
+from mpt_api_client.exceptions import MPTError
 
 from mpt_usage_reporting_extension import cli
 from mpt_usage_reporting_extension.cli.commands.push_estimates_by_id import (
@@ -12,6 +13,7 @@ from mpt_usage_reporting_extension.cli.commands.push_estimates_by_id import (
     SubscriptionSelector,
     resolve_targets,
 )
+from mpt_usage_reporting_extension.exceptions import UpstreamSubscriptionError
 from mpt_usage_reporting_extension.types import Month
 
 
@@ -32,6 +34,7 @@ class _StubSubscriptions:
 
     def __init__(self):
         self.ids: list[str] = []
+        self.error: Exception | None = None
         self.query = None
 
     def filter(self, query):
@@ -42,6 +45,8 @@ class _StubSubscriptions:
         return self
 
     async def iterate(self):
+        if self.error is not None:
+            raise self.error
         for subscription_id in self.ids:
             yield SimpleNamespace(id=subscription_id)
 
@@ -116,6 +121,15 @@ async def test_resolve_by_product(repo, subscriptions, sub1, sub2):
 
     assert result == ["SUB-2", "SUB-9"]
     assert str(subscriptions.query) == str(expected_query)
+
+
+async def test_resolve_by_product_wraps_upstream_error(repo, subscriptions, caplog):
+    subscriptions.error = MPTError("boom")
+
+    with pytest.raises(UpstreamSubscriptionError):
+        await _drain(ProductSelector("PRD-1"), repo, subscriptions)
+
+    assert "Upstream error resolving subscription ids" in caplog.text
 
 
 async def test_resolve_by_seller(repo, subscriptions, sub1, sub2):

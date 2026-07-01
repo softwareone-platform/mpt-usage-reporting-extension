@@ -3,7 +3,9 @@ from typing import Any, cast
 
 import pytest
 from mpt_api_client import RQLQuery
+from mpt_api_client.exceptions import MPTError
 
+from mpt_usage_reporting_extension.exceptions import UpstreamSubscriptionError
 from mpt_usage_reporting_extension.selectors import (
     AgreementSelector,
     ProductSelector,
@@ -18,6 +20,7 @@ class _StubSubscriptions:
 
     def __init__(self):
         self.agreements: list[str | None] = []
+        self.error: Exception | None = None
         self.query = None
 
     def filter(self, query):
@@ -28,6 +31,8 @@ class _StubSubscriptions:
         return self
 
     async def iterate(self):
+        if self.error is not None:
+            raise self.error
         for agreement_id in self.agreements:
             agreement = None if agreement_id is None else SimpleNamespace(id=agreement_id)
             yield SimpleNamespace(agreement=agreement)
@@ -118,6 +123,15 @@ async def test_delete_product_dedupes_agreements(deleter, subscription_repo, sub
     assert subscription_repo.delete.await_count == 2
     subscription_repo.delete.assert_any_call(subscription_id="SUB-AGR-1")
     subscription_repo.delete.assert_any_call(subscription_id="SUB-AGR-2")
+
+
+async def test_delete_wraps_upstream_error(deleter, subscriptions, caplog):
+    subscriptions.error = MPTError("boom")
+
+    with pytest.raises(UpstreamSubscriptionError):
+        await deleter.delete(ProductSelector("PRD-1"))
+
+    assert "Upstream error resolving agreement ids from subscriptions" in caplog.text
 
 
 async def test_delete_product_uses_product_query(deleter, subscriptions):

@@ -2,6 +2,7 @@ import logging
 from collections.abc import AsyncIterator
 
 import typer
+from mpt_api_client.exceptions import MPTError
 from mpt_api_client.resources.billing.statement_charges import StatementCharge
 from mpt_api_client.resources.billing.statements import Statement
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
@@ -13,6 +14,7 @@ from mpt_usage_reporting_extension.accumulation import (
     ChargeTotals,
     StatementChargeFilter,
 )
+from mpt_usage_reporting_extension.exceptions import UpstreamStatementError
 from mpt_usage_reporting_extension.services.execution_tracker import StatementProcessingRecorder
 
 logger = logging.getLogger(__name__)
@@ -39,13 +41,26 @@ class ChargeStreamer:
         recorder. Because the charges are yielded from inside that bracket, an error raised
         downstream while consuming a statement's charges is attributed to that statement.
         """
-        client = self._api_service.client.billing.statements
         for statement in statements:
             logger.info("Streaming charges for statement %s", statement.id)
             async with self._recorder.record(statement.id):
-                async for charge in client.charges(statement.id).stream():
-                    charge.statement = statement
+                async for charge in self._stream_statement(statement):
                     yield charge
+
+    async def _stream_statement(self, statement: Statement) -> AsyncIterator[StatementCharge]:
+        """Stream one statement's charges, mapping upstream errors to UpstreamStatementError."""
+        client = self._api_service.client.billing.statements
+        try:
+            async for charge in client.charges(statement.id).stream():
+                charge.statement = statement
+                yield charge
+        except MPTError as exc:
+            logger.warning(
+                "Upstream error streaming charges for statement %s: %s", statement.id, exc
+            )
+            raise UpstreamStatementError(
+                f"Failed to stream charges for statement {statement.id}"
+            ) from exc
 
 
 class ChargeAccumulator:
