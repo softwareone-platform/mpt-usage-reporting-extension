@@ -8,22 +8,22 @@ from mpt_usage_reporting_extension.utils import (  # noqa: WPS347
 )
 
 
-def test_sanitize_id_keeps_alphanumerics():
-    result = sanitize_id("AGR1234")
+def test_sanitize_id_keeps_alphanumerics_and_hyphens():
+    result = sanitize_id("AGR-123-456")
 
-    assert result == "AGR1234"
+    assert result == "AGR-123-456"
 
 
-def test_sanitize_id_strips_non_alphanumerics():
-    result = sanitize_id("AGR-1234")
+def test_sanitize_id_strips_other_punctuation():
+    result = sanitize_id("AGR_123.456")
 
-    assert result == "AGR1234"
+    assert result == "AGR123456"
 
 
 def test_sanitize_id_removes_newline_forgery():
     result = sanitize_id("AGR-1\n2026 INFO forged entry")
 
-    assert result == "AGR12026INFOforgedentry"
+    assert result == "AGR-12026INFOforgedentry"
 
 
 def test_to_date_narrows_datetime():
