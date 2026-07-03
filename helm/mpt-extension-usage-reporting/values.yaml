@@ -59,4 +59,4 @@ global:
       # Cron schedule (UTC). Empty disables scheduling at deploy time.
       schedule: "0 2 * * *"
       # Console command invoked by the job.
-      command: mpt-billing-subscription-usage
+      command: mpt-billing-subscription-usage run
