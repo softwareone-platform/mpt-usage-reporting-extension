@@ -25,6 +25,7 @@ dev = [
   "flake8==7.3.*",
   "flake8-aaa==0.17.*",
   "flake8-pyproject==1.2.*",
+  "freezegun==1.5.*",
   "mypy==2.0.*",
   "pre-commit==4.6.*",
   "pytest-asyncio==1.3.*",

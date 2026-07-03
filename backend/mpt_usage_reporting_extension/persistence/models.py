@@ -31,6 +31,29 @@ class Charge:
 
 
 @dataclass(frozen=True, slots=True)
+class AccumulationPeriod:
+    """One accumulated month for a subscription, with its totals and freshest write time."""
+
+    subscription_id: str
+    year: Year
+    month: Month
+    ppx1: Decimal
+    spx1: Decimal
+    updated_at: str
+
+    def to_payload(self) -> dict[str, object]:
+        """Return the period as the API's camelCase payload."""
+        return {
+            "subscriptionId": self.subscription_id,
+            "year": int(self.year),
+            "month": int(self.month),
+            "ppx1": float(self.ppx1),
+            "spx1": float(self.spx1),
+            "updatedAt": self.updated_at,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionRecord:
     """One recorded command execution, as read back for the status report."""
 
@@ -38,6 +61,31 @@ class ExecutionRecord:
     status: str
     started_at: str
     completed_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionDetail:
+    """One command execution row with its identity, inputs, and outcome."""
+
+    id: int
+    command: str
+    status: str
+    parameters: dict[str, object]
+    result: dict[str, object] | None
+    started_at: str
+    completed_at: str | None
+
+    def to_payload(self) -> dict[str, object]:
+        """Return the execution as the API's camelCase payload."""
+        return {
+            "id": self.id,
+            "command": self.command,
+            "status": self.status,
+            "parameters": self.parameters,
+            "result": self.result,
+            "startedAt": self.started_at,
+            "completedAt": self.completed_at,
+        }
 
 
 @dataclass(frozen=True, slots=True)

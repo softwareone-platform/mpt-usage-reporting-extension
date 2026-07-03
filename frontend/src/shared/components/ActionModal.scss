@@ -1,0 +1,29 @@
+.action-modal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  max-width: 100%;
+  min-width: min(480px, 100%);
+  padding: var(--spacing-4);
+}
+
+.action-modal__content {
+  min-width: 0;
+}
+
+.action-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.action-modal__table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.action-modal__table th,
+.action-modal__table td {
+  border-bottom: 1px solid var(--color-grey-2, #e0e0e0);
+  padding: var(--spacing-1) var(--spacing-2);
+  text-align: left;
+}

@@ -3,7 +3,9 @@ from collections.abc import AsyncIterator, Mapping
 from typing import Protocol
 
 from mpt_usage_reporting_extension.persistence.models import (
+    AccumulationPeriod,
     Charge,
+    ExecutionDetail,
     ExecutionRecord,
     SubscriptionMonthlyAccumulation,
 )
@@ -37,6 +39,10 @@ class SubscriptionAccumulationRepository(Protocol):  # noqa: WPS214
         self, *, subscription_id: str | None = None, agreement_id: str | None = None
     ) -> int:
         """Delete subscription buckets for the given scope (no scope deletes every bucket)."""
+        ...
+
+    def periods(self, subscription_id: str) -> AsyncIterator[AccumulationPeriod]:
+        """Yield the subscription's accumulated months (newest first), streamed."""
         ...
 
     def updated(self, updated_on: dt.date) -> AsyncIterator[SubscriptionMonthlyAccumulation]:
@@ -79,6 +85,10 @@ class ExecutionRepository(Protocol):
         self, execution_id: int, status: ExecutionStatus, result: Mapping[str, object]
     ) -> None:
         """Stamp completed_at, final status, and the JSON result on the execution row."""
+        ...
+
+    async def get(self, execution_id: int) -> ExecutionDetail | None:
+        """Return the execution row by id, or None when absent."""
         ...
 
     def recent(self, limit: int) -> AsyncIterator[ExecutionRecord]:

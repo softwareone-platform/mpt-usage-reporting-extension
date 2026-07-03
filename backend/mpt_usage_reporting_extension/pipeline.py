@@ -66,7 +66,12 @@ class UsageReportingPipeline:  # noqa: WPS214
                 raise typer.Exit(code=1)
 
     async def recalculate(
-        self, scope: Selector | None, parameters: Mapping[str, object], *, dry_run: bool = False
+        self,
+        scope: Selector | None,
+        parameters: Mapping[str, object],
+        *,
+        dry_run: bool = False,
+        execution_id: int | None = None,
     ) -> None:
         """Delete the scope's buckets, then re-accumulate exactly what was reset.
 
@@ -77,19 +82,32 @@ class UsageReportingPipeline:  # noqa: WPS214
         intact. Retention pruning still runs afterwards.
         When ``dry_run`` is enabled, every read/compute stage still runs, but all DB delete/upsert/
         prune actions and subscription estimate updates are replaced by no-ops.
+        When ``execution_id`` is given the run finalises that already-started execution row
+        (e.g. one an API handler opened before scheduling this run) instead of starting its own.
         """
         async with SqliteDatabase(resolve_db_path()) as db:
             if dry_run:
                 typer.echo("Dry run: running recalculate in read-only mode (no writes or updates).")
 
             tracker = ExecutionTracker(db.execution_repository())
-            async with tracker.track(Command.RECALCULATE, parameters) as execution:
+            async with self._recalculate_tracking(tracker, parameters, execution_id) as execution:
                 reset_scope = await self._reset(scope, db, dry_run=dry_run)
                 with self._scoped_charge_filter(reset_scope.outcome.subscriptions):
                     await self._refill(reset_scope, db, execution, dry_run=dry_run)
                 failed = execution.has_errors
             if failed:
                 raise typer.Exit(code=1)
+
+    def _recalculate_tracking(
+        self,
+        tracker: ExecutionTracker,
+        parameters: Mapping[str, object],
+        execution_id: int | None,
+    ) -> contextlib.AbstractAsyncContextManager[Execution]:
+        """Resume the given execution row when one exists, otherwise start a new one."""
+        if execution_id is None:
+            return tracker.track(Command.RECALCULATE, parameters)
+        return tracker.resume(execution_id)
 
     @contextlib.contextmanager
     def _scoped_charge_filter(self, subscriptions: Iterable[str]) -> Iterator[None]:

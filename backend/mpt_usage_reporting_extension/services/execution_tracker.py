@@ -40,8 +40,25 @@ class ExecutionTracker:
         re-raises.
         """
         execution = Execution(await self._executions.start(command, parameters))
-        try:
+        async with self._finalise(execution):
             yield execution
+
+    @asynccontextmanager
+    async def resume(self, execution_id: int) -> AsyncIterator[Execution]:
+        """Adopt an already-started execution row, yield its handle, then finalise it.
+
+        Finalisation follows the same semantics as ``track``; the row must already exist
+        (e.g. started by an API handler before scheduling the command in the background).
+        """
+        execution = Execution(execution_id)
+        async with self._finalise(execution):
+            yield execution
+
+    @asynccontextmanager
+    async def _finalise(self, execution: Execution) -> AsyncIterator[None]:
+        """Stamp the execution row's final status and result once the body exits."""
+        try:
+            yield
         except BaseException as exc:  # noqa: WPS424  (includes typer.Exit)
             execution.record_result(error=str(exc))
             await self._executions.finish(execution.id, ExecutionStatus.FAILED, execution.result)

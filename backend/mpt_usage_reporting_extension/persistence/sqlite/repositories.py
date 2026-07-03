@@ -6,6 +6,7 @@ from decimal import Decimal
 import aiosqlite
 
 from mpt_usage_reporting_extension.persistence.models import (
+    AccumulationPeriod,
     Charge,
     SubscriptionMonthlyAccumulation,
 )
@@ -24,6 +25,13 @@ def _where_clause(columns: Iterable[str]) -> str:
 
 
 _RETENTION_MONTHS = 18  # cleanup keeps this many trailing months (buffer for delayed billing)
+
+_SUBSCRIPTION_PERIOD_ROWS = (
+    "SELECT year, month, ppx1, spx1, updated_at "
+    "FROM subscription_monthly_accumulation "
+    "WHERE subscription_id = :subscription_id "
+    "ORDER BY year DESC, month DESC"
+)
 
 
 class _AccumulationEngine:  # noqa: WPS214
@@ -156,6 +164,29 @@ class SubscriptionAccumulationRepository:  # noqa: WPS214
             equals["agreement_id"] = agreement_id
         return await self.engine.delete(**equals)
 
+    async def periods(self, subscription_id: str) -> AsyncIterator[AccumulationPeriod]:
+        """Yield the subscription's accumulated months (newest first), streamed.
+
+        Buckets are keyed per agreement, so months are merged across agreements: totals are
+        summed exactly in ``Decimal`` (SQLite's ``SUM`` would fall back to float arithmetic
+        on the DECIMAL text columns) and ``updated_at`` is the freshest write of the month.
+        """
+        period: AccumulationPeriod | None = None
+        async with self.engine.connection.execute(
+            _SUBSCRIPTION_PERIOD_ROWS, {"subscription_id": subscription_id}
+        ) as cursor:
+            async for row in cursor:
+                same_month = period is not None and (period.year, period.month) == (
+                    row["year"],
+                    row["month"],
+                )
+                if period is not None and not same_month:
+                    yield period
+                previous = period if same_month else None
+                period = self._merge_period(subscription_id, previous, row)
+        if period is not None:
+            yield period
+
     async def updated(self, updated_on: dt.date) -> AsyncIterator[SubscriptionMonthlyAccumulation]:
         """Yield the subscription buckets last written on updated_on (streamed).
 
@@ -178,6 +209,31 @@ class SubscriptionAccumulationRepository:  # noqa: WPS214
             "agreement_id", subscription_id=subscription_id
         ):
             yield str(agreement_id)
+
+    def _merge_period(
+        self,
+        subscription_id: str,
+        period: AccumulationPeriod | None,
+        row: sqlite3.Row,
+    ) -> AccumulationPeriod:
+        """Fold one bucket row into the month's period, keeping Decimal sums exact."""
+        if period is None:
+            return AccumulationPeriod(
+                subscription_id=subscription_id,
+                year=row["year"],
+                month=row["month"],
+                ppx1=row["ppx1"],
+                spx1=row["spx1"],
+                updated_at=row["updated_at"],
+            )
+        return AccumulationPeriod(
+            subscription_id=subscription_id,
+            year=period.year,
+            month=period.month,
+            ppx1=period.ppx1 + row["ppx1"],
+            spx1=period.spx1 + row["spx1"],
+            updated_at=max(period.updated_at, row["updated_at"]),
+        )
 
     def _to_bucket(self, row: sqlite3.Row) -> SubscriptionMonthlyAccumulation:
         return SubscriptionMonthlyAccumulation(

@@ -106,23 +106,30 @@ The store must therefore be configured for safe multi-writer access:
 
 `backend/mpt_usage_reporting_extension/app.py` registers:
 
-- **event route** `POST /events/v2/orders/purchase` — runs the purchase pipeline
-  (`flows/pipelines/purchase.py`, `flows/steps/log_order.py`);
-- **API routes** `GET /api/v2/agreements/{id}` and `POST /api/v2/agreements/{id}/sync`;
-- **plug routes** — register the agreement UI plugs.
+- **event route** `POST /events/v2/statements/status-changed` — task event for automated
+  statements turning Issued or Cancelled; runs the statement pipeline
+  (`flows/pipelines/statement.py`, `flows/steps/log_statement.py`), which currently just
+  logs the statement to be processed;
+- **API routes** `POST /api/v2/subscriptions/{id}/recalculate` and
+  `GET /api/v2/executions/{id}` — launch a subscription recalculate in the background and
+  poll the returned `command_execution` by id;
+- **API route** `GET /api/v2/subscriptions/{id}/accumulations` — list the subscription's
+  accumulated months with their last-updated timestamps (shown in the recalculate modal);
+- **plug routes** — register the subscription UI plug.
 
-Both agreements routes fetch from the Marketplace API through `mpt_api_service`. Upstream
-`mpt-api-client` failures are not SDK `APIError`s, so `agreements.py` translates them
-(`_as_api_error`): `MPTHttpError` 404/401/403 map to `NotFoundError`/`UnauthorizedError`/
-`ForbiddenError`, and any other status, network, or retry error maps to `UpstreamServiceError`.
-`get_agreement` and `sync_agreement` therefore return **404/401/403/502** accordingly instead of
-a blanket 500.
+The subscription recalculate route opens a `command_execution` row, then runs
+`pipeline.recalculate` for the subscription (last 13 months) on a background asyncio task via
+`services/recalculate_launcher.py`; the row is finalised by the pipeline's `ExecutionTracker`.
+While a subscription's task is still running, another `POST` for the same subscription returns
+**409**. The `POST` response carries the execution id, and the plug polls
+`GET /api/v2/executions/{id}` (**404** for unknown ids) until the run finishes.
 
 ## Frontend
 
-`frontend/` is a TypeScript/React plug UI (esbuild) providing the agreement
-"Sync account" tab, line actions, and the agreement actions wizard. It builds to
-`backend/static/` and is served through the backend's plug routes.
+`frontend/` is a TypeScript/React plug UI (esbuild) providing the subscription
+"Recalculate usage" action modal, which also lists the subscription's stored accumulation
+months with their last update. It builds to `backend/static/` and is served through
+the backend's plug routes.
 
 ## Components
 
@@ -136,7 +143,7 @@ a blanket 500.
 | `services/charge_persistence.py`, `services/bucket_clean.py`, `persistence/` | Persisting accumulated totals to SQLite and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
 | `app.py`, `routers/` | Extension event/API/plug routes |
-| `flows/` | Order pipelines and steps |
+| `flows/` | Statement event pipelines and steps |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |
 
 ## External integrations

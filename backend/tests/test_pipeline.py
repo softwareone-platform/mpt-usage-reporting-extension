@@ -124,6 +124,19 @@ async def test_recalculate_deletes_then_prunes(
     )
 
 
+async def test_recalculate_with_execution_id_resumes_existing_row(
+    stub_database, usage, selector, deleter
+):
+    deleter.statement_agreements = frozenset(("AGR-1",))
+    executions = stub_database.execution_repository.return_value
+
+    await usage.recalculate(None, {"product_id": "PRD-1"}, execution_id=5)  # act
+
+    executions.start.assert_not_awaited()
+    executions.finish.assert_awaited_once()
+    assert executions.finish.await_args.args[0] == 5
+
+
 async def test_recalculate_exits_on_upload_failure(mocker, stub_database, usage, selector, deleter):
     deleter.delete.return_value = DeleteOutcome()
     deleter.statement_agreements = frozenset(("AGR-1",))

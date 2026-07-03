@@ -59,6 +59,37 @@ async def test_recent_returns_newest_first(db, executions):
     assert result[1].status == ExecutionStatus.FAILED
 
 
+async def test_get_returns_running_execution(executions):
+    execution_id = await executions.start(Command.RECALCULATE, {"subscription_id": "SUB-1"})
+
+    result = await executions.get(execution_id)
+
+    assert result.id == execution_id
+    assert (result.command, result.status) == (Command.RECALCULATE, ExecutionStatus.RUNNING)
+    assert result.parameters == {"subscription_id": "SUB-1"}
+    assert (result.result, result.completed_at) == (None, None)
+    assert result.started_at
+
+
+async def test_get_returns_finished_execution_with_result(executions):
+    execution_id = await executions.start(Command.RECALCULATE, {"subscription_id": "SUB-1"})
+    await executions.finish(execution_id, ExecutionStatus.SUCCESS, {"statements": 2})
+
+    result = await executions.get(execution_id)
+
+    assert result.status == ExecutionStatus.SUCCESS
+    assert result.result == {"statements": 2}
+    assert result.completed_at
+
+
+async def test_get_returns_none_for_unknown_id(executions):
+    await executions.start(Command.RECALCULATE, {"subscription_id": "SUB-1"})
+
+    result = await executions.get(404)
+
+    assert result is None
+
+
 async def test_statement_start_inserts_processing_row(db, statements):
     execution_id = 42
 

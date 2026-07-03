@@ -643,3 +643,49 @@ async def test_delete_agreement_repo_all(
     result = await agreement_repo.delete()
 
     assert result == 2
+
+
+async def test_periods_lists_months_newest_first(
+    subscription_repo, charge_factory, decimal_first, decimal_zero, year, month, other_month
+):
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, month=other_month)
+    )
+
+    result = [period async for period in subscription_repo.periods("SUB-1234-5678")]
+
+    months = [(period.year, period.month) for period in result]
+    assert months == [(year, other_month), (year, month)]
+    assert all(period.subscription_id == "SUB-1234-5678" for period in result)
+    assert all(period.updated_at for period in result)
+
+
+async def test_periods_sums_agreements_per_month_without_drift(
+    subscription_repo, charge_factory, decimal_zero
+):
+    # 0.1 + 0.2 == 0.30000000000000004 in float; the Decimal fold keeps it exact.
+    await subscription_repo.accumulate(
+        charge_factory(Decimal("0.1"), decimal_zero, agreement_id="AGR-1")
+    )
+    await subscription_repo.accumulate(
+        charge_factory(Decimal("0.2"), Decimal("0.7"), agreement_id="AGR-2")
+    )
+
+    result = [period async for period in subscription_repo.periods("SUB-1234-5678")]
+
+    assert len(result) == 1
+    assert result[0].ppx1 == Decimal("0.3")
+    assert result[0].spx1 == Decimal("0.7")
+
+
+async def test_periods_filters_by_subscription(
+    subscription_repo, charge_factory, decimal_first, decimal_zero
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, subscription_id="SUB-OTHER")
+    )
+
+    result = [period async for period in subscription_repo.periods("SUB-1234-5678")]
+
+    assert result == []

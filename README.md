@@ -2,7 +2,7 @@
 
 `mpt-usage-reporting-extension` is a minimal SoftwareOne Marketplace extension built on top of `mpt-extension-sdk` and `mpt-tool`.
 
-It is primarily a playground repository: it shows the baseline extension shape, a simple validation API endpoint, an event listener, a small fulfillment pipeline, and the development workflow used by extension repositories in this ecosystem.
+It reports billing usage for configured products. See [docs/architecture.md](docs/architecture.md) for how the accumulation pipeline, the subscription "Recalculate usage" plug, and the statement event listener fit together.
 
 ## Repository Layout
 

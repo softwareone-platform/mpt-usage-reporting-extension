@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator, Mapping
 
 import aiosqlite
 
-from mpt_usage_reporting_extension.persistence.models import ExecutionRecord
+from mpt_usage_reporting_extension.persistence.models import ExecutionDetail, ExecutionRecord
 from mpt_usage_reporting_extension.persistence.sqlite.repositories import utc_now_iso
 from mpt_usage_reporting_extension.types import Command, ExecutionStatus, StatementStatus
 
@@ -26,6 +26,10 @@ _FINISH_STATEMENT = (
 _RECENT_EXECUTIONS = (
     "SELECT command, status, started_at, completed_at FROM command_execution "
     "ORDER BY started_at DESC, id DESC LIMIT :limit"
+)
+_GET_EXECUTION = (
+    "SELECT id, command, parameters, status, started_at, completed_at, result "
+    "FROM command_execution WHERE id = :id"
 )
 
 
@@ -71,6 +75,22 @@ class ExecutionRepository:
             },
         )
         await cursor.close()
+
+    async def get(self, execution_id: int) -> ExecutionDetail | None:
+        """Return the execution row by id, or None when absent."""
+        async with self._connection.execute(_GET_EXECUTION, {"id": execution_id}) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return ExecutionDetail(
+            id=row["id"],
+            command=row["command"],
+            status=row["status"],
+            parameters=json.loads(row["parameters"]),
+            result=json.loads(row["result"]) if row["result"] else None,
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
+        )
 
     async def recent(self, limit: int) -> AsyncIterator[ExecutionRecord]:
         """Yield the most recent executions (newest first), capped at limit."""

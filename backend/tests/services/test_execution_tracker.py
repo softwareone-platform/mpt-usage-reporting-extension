@@ -44,6 +44,22 @@ async def test_track_finishes_failed_and_reraises(executions):
     executions.finish.assert_awaited_once_with(11, ExecutionStatus.FAILED, {"error": "boom"})
 
 
+async def test_resume_finishes_success_without_starting(executions):
+    async with ExecutionTracker(executions).resume(7) as execution:
+        execution.record_result(statements=3)
+
+    executions.start.assert_not_awaited()
+    executions.finish.assert_awaited_once_with(7, ExecutionStatus.SUCCESS, {"statements": 3})
+
+
+async def test_resume_finishes_failed_and_reraises(executions):
+    with pytest.raises(RuntimeError, match="boom"):
+        async with ExecutionTracker(executions).resume(7):
+            raise RuntimeError("boom")
+
+    executions.finish.assert_awaited_once_with(7, ExecutionStatus.FAILED, {"error": "boom"})
+
+
 async def test_recorder_records_success(processing):
     async with StatementProcessingRecorder(processing, execution_id=5).record("BILL-1"):
         processing.start.assert_awaited_once_with(5, "BILL-1")
