@@ -32,7 +32,9 @@ spec:
                 {{- toYaml $.Values.securityContext | nindent 16 }}
               image: "{{ $.Values.global.registryUrl }}{{ $.Values.image.repository }}:{{ $.Chart.AppVersion }}"
               command:
-                - {{ $config.command }}
+                {{- range (splitList " " $config.command) }}
+                - {{ . }}
+                {{- end }}
               imagePullPolicy: {{ $.Values.image.pullPolicy }}
               envFrom:
                 - configMapRef:

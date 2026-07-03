@@ -28,9 +28,6 @@ spec:
             - mpt-ext
           args:
             - run
-            - api
-            - --no-color
-            - --reload
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           envFrom:
             - configMapRef:
