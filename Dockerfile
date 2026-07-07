@@ -22,20 +22,8 @@ COPY backend/ .
 
 RUN uv sync --frozen --no-cache --no-dev
 
-FROM node:26-bookworm-slim AS frontend-build
-
-WORKDIR /frontend
-
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-
-COPY frontend/ ./
-RUN npm run build
-RUN mkdir -p /static
-
 FROM build AS dev
 
-COPY --from=frontend-build /static ./static
 RUN uv sync --frozen --no-cache --dev
 
 CMD ["mpt-ext", "run"]
@@ -45,7 +33,6 @@ FROM base AS prod
 COPY --from=build /opt/venv /opt/venv
 COPY --from=build /extension/mpt_usage_reporting_extension ./mpt_usage_reporting_extension
 COPY --from=build /extension/migrations ./migrations
-COPY --from=frontend-build /static ./static
 
 RUN groupadd -r appuser && useradd -r -g appuser -m -d /home/appuser appuser && \
     mkdir -p /home/appuser/.cache/uv && \

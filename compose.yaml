@@ -9,21 +9,11 @@ services:
         condition: service_started
     volumes:
       - ./backend:/extension
-      - ./static:/extension/static
     env_file:
       - path: backend/.env
         required: false
     ports:
       - "8080:8080"
-
-  frontend:
-    image: node:24-bookworm-slim
-    command: bash -c "npm ci && npm run start"
-    working_dir: /src
-    volumes:
-      - ./frontend:/src
-      - ./static:/static
-      - /src/node_modules
 
   jaeger:
     image: jaegertracing/jaeger:2.17.0
