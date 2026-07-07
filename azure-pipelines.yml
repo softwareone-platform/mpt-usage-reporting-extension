@@ -1,6 +1,5 @@
 trigger:
-- main
-- azure-pipelines
+- release/5
 
 pool:
   name: "Standard-Linux"
