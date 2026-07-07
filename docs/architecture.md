@@ -8,14 +8,12 @@ below.
 ## Purpose
 
 `mpt-usage-reporting-extension` is a SoftwareOne Marketplace Platform (MPT)
-extension that reports billing subscription usage. It has two faces:
-
-- a **CLI batch job** that selects billing statements, streams their charges,
-  accumulates them per subscription/agreement and month, persists the totals to
-  a local SQLite store, and pushes the resulting price estimates back to each
-  subscription;
-- a small **extension app** (event, API, and plug routes) plus a TypeScript
-  frontend that surfaces agreement actions in the Marketplace UI.
+extension that reports billing subscription usage. Its product is a **CLI batch
+job** that selects billing statements, streams their charges, accumulates them
+per subscription/agreement and month, persists the totals to a local SQLite
+store, and pushes the resulting price estimates back to each subscription. A
+bare **extension app** (`app.py`) is kept only so `mpt-ext run` can serve the
+SDK's built-in endpoints; it registers no routes of its own.
 
 The backend is built on the MPT Extension SDK.
 
@@ -104,25 +102,9 @@ The store must therefore be configured for safe multi-writer access:
 
 ## Extension app
 
-`backend/mpt_usage_reporting_extension/app.py` registers:
-
-- **event route** `POST /events/v2/orders/purchase` — runs the purchase pipeline
-  (`flows/pipelines/purchase.py`, `flows/steps/log_order.py`);
-- **API routes** `GET /api/v2/agreements/{id}` and `POST /api/v2/agreements/{id}/sync`;
-- **plug routes** — register the agreement UI plugs.
-
-Both agreements routes fetch from the Marketplace API through `mpt_api_service`. Upstream
-`mpt-api-client` failures are not SDK `APIError`s, so `agreements.py` translates them
-(`_as_api_error`): `MPTHttpError` 404/401/403 map to `NotFoundError`/`UnauthorizedError`/
-`ForbiddenError`, and any other status, network, or retry error maps to `UpstreamServiceError`.
-`get_agreement` and `sync_agreement` therefore return **404/401/403/502** accordingly instead of
-a blanket 500.
-
-## Frontend
-
-`frontend/` is a TypeScript/React plug UI (esbuild) providing the agreement
-"Sync account" tab, line actions, and the agreement actions wizard. It builds to
-`backend/static/` and is served through the backend's plug routes.
+`backend/mpt_usage_reporting_extension/app.py` instantiates a bare
+`ExtensionApp` with no event, API, or plug routes. It exists so `mpt-ext run`
+can serve the SDK's built-in endpoints.
 
 ## Components
 
@@ -135,8 +117,7 @@ a blanket 500.
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
 | `services/charge_persistence.py`, `services/bucket_clean.py`, `persistence/` | Persisting accumulated totals to SQLite and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
-| `app.py`, `routers/` | Extension event/API/plug routes |
-| `flows/` | Order pipelines and steps |
+| `app.py` | Bare `ExtensionApp` served by `mpt-ext run` |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |
 
 ## External integrations
@@ -149,7 +130,7 @@ Jaeger/OpenTelemetry for local tracing. See
 ## Deployment shape
 
 The container image is built from the multi-stage `Dockerfile` and started via
-`mpt-ext run`. `compose.yaml` runs the backend, frontend watcher, and Jaeger;
+`mpt-ext run`. `compose.yaml` runs the backend and Jaeger;
 `compose.local.yaml` overrides it for `--local` mode. See
 [deployment.md](deployment.md) and [local-development.md](local-development.md).
 

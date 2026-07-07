@@ -25,7 +25,7 @@ make run
 
 The service is exposed on `http://localhost:8080`.
 
-To run in local mode (`--local`) with Jaeger tracing and the frontend asset watcher, use:
+To run in local mode (`--local`) with Jaeger tracing, use:
 
 ```bash
 make run-local
