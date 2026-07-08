@@ -62,7 +62,7 @@ secrets:
   SdkExtensionApiKey:
     name: SDK_EXTENSION_API_KEY
 cronjobs:
-  billing-subscription-usage:
+  subscription-usage:
     serviceAccountName: mpt-extension-usage-reporting-sa
     image: mpt-extension-usage-reporting
     schedule: "0 2 * * *"
