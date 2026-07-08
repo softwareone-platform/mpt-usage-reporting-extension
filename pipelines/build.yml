@@ -1,0 +1,25 @@
+#https://dev.azure.com/softwareone-pc/MPT/_build?definitionId=
+
+trigger:
+  branches:
+    include:
+      - main
+      - release/*
+
+pool:
+  name: Standard-Linux
+
+resources:
+  repositories:
+    - repository: buildTemplates
+      type: git
+      name: MPT/ops-build-templates
+      ref: refs/heads/feature/build_template
+
+extends:
+  template: common-build/extends-py.yml@buildTemplates
+  parameters:
+    appName: mpt-extension-usage-reporting
+    helmGitRepositoryName: github--mpt-usage-reporting-extension
+    sbomWorkingDirectory: /backend
+
