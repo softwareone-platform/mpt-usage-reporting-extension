@@ -26,12 +26,10 @@ persistence:
   accessMode: ReadWriteMany
   existingClaim: mpt-extension-usage-reporting-data
 env:
-  MpBaseUrl:
+  apiFqdn:
     name: MPT_API_BASE_URL
-    defaultValue: "https://api.platform.softwareone.com"
   MpProductsIds:
     name: MPT_PRODUCTS_IDS
-    defaultValue: default
   MptBsuDbPath:
     name: MPT_BSU_DB_PATH
     defaultValue: /data/bsu.db
@@ -40,10 +38,8 @@ env:
     defaultValue: local
   SdkExtensionId:
     name: SDK_EXTENSION_ID
-    defaultValue: EXT-2415-5207
   SdkExtensionUrl:
     name: SDK_EXTENSION_URL
-    defaultValue: https://EXT-2415-5207.ext.s1.show
   SdkOtelServiceName:
     name: SDK_OTEL_SERVICE_NAME
     defaultValue: Swo.Extension.UsageReporting
