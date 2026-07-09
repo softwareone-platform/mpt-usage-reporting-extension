@@ -13,6 +13,4 @@ data:
   SDK_EXTENSION_ID: {{ .Values.global.SdkExtensionId | quote }}
   SDK_EXTENSION_URL: {{ .Values.global.SdkExtensionUrl | quote }}
   SDK_OTEL_SERVICE_NAME: {{ .Values.global.SdkOtelServiceName | quote }}
-  SDK_OTEL_EXPORTERS: {{ .Values.global.SdkOtelExporters | quote }}
-  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.global.OtelExporterOtlpEndpoint | quote }}
-  OTEL_EXPORTER_OTLP_PROTOCOL: {{ .Values.global.OtelExporterOtlpProtocol | quote }}
+  SDK_OBSERVABILITY_ENABLED: {{ .Values.global.SdkObservabilityEnabled | quote }}
