@@ -30,12 +30,18 @@ def stub_database(mocker):
 
 
 @pytest.fixture
-def ctx(mocker, run_window):
+def ctx(mocker, run_window, notifier):
     return RunContext(
         api_service=mocker.MagicMock(),
         window=run_window,
         product_ids=("PRD-1",),
+        notifier=notifier,
     )
+
+
+@pytest.fixture
+def notifier(mocker):
+    return mocker.AsyncMock()
 
 
 @pytest.fixture
@@ -104,6 +110,58 @@ async def test_run_prunes_both_accumulation_tables(stub_database, usage, selecto
     agreement_prune = stub_database.agreement_repository.return_value.prune
     subscription_prune.assert_awaited_once_with(anchor.year, Month(anchor.month))
     agreement_prune.assert_awaited_once_with(anchor.year, Month(anchor.month))
+
+
+async def test_run_notifies_success_with_run_report(stub_database, usage, selector, notifier):
+    await usage.run({})  # act
+
+    notifier.notify_success.assert_called_once()
+    command_run, report = notifier.notify_success.call_args.args
+    assert command_run.name == "run"
+    assert command_run.command
+    assert report == {"statements": 0, "accumulations": 0, "estimates_failed": 0}
+    notifier.notify_failure.assert_not_called()
+
+
+async def test_run_notifies_failure_when_uploads_fail(
+    mocker, stub_database, usage, selector, notifier
+):
+    uploader = mocker.patch.object(pipeline, "EstimatesUploader").return_value
+    uploader.update = mocker.AsyncMock(return_value=mocker.Mock(has_failures=True, failed_count=2))
+
+    with pytest.raises(typer.Exit):
+        await usage.run({})  # act
+
+    notifier.notify_failure.assert_called_once()
+    command_run, error = notifier.notify_failure.call_args.args
+    assert command_run.name == "run"
+    assert "estimates_failed=2" in error
+    notifier.notify_success.assert_not_called()
+
+
+async def test_run_notifies_failure_with_stacktrace_and_reraises(
+    mocker, stub_database, usage, selector, notifier
+):
+    selector.select = mocker.AsyncMock(side_effect=RuntimeError("boom"))
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await usage.run({})  # act
+
+    command_run, error, stacktrace = notifier.notify_failure.call_args.args
+    assert command_run.name == "run"
+    assert error == "boom"
+    assert "RuntimeError: boom" in stacktrace
+
+
+async def test_recalculate_notifies_success(stub_database, usage, selector, deleter, notifier):
+    deleter.delete.return_value = DeleteOutcome()
+    deleter.statement_agreements = frozenset(("AGR-1",))
+
+    await usage.recalculate(None, {})  # act
+
+    notifier.notify_success.assert_called_once()
+    command_run = notifier.notify_success.call_args.args[0]
+    assert command_run.name == "recalculate"
 
 
 async def test_recalculate_deletes_then_prunes(

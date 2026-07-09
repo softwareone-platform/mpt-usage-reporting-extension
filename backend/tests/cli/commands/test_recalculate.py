@@ -115,6 +115,21 @@ def test_recalculate_dry_run_passes_true(mocker, runner):
     assert recalc.await_args.kwargs["dry_run"] is True
 
 
+def test_recalculate_passes_notifier_to_pipeline(mocker, runner):
+    pipeline_cls = _patch_pipeline(mocker)
+    notifier = mocker.patch.object(
+        cli.commands.recalculate, "build_execution_notifier"
+    ).return_value
+
+    result = runner.invoke(
+        cli.app,
+        ["recalculate", "--from-date", "2026-06-01", "--till-date", "2026-06-10"],
+    )
+
+    assert result.exit_code == 0
+    assert pipeline_cls.call_args.args[0].notifier is notifier
+
+
 def test_recalculate_rejects_two_scopes(mocker, runner):
     mocker.patch.object(cli.commands.recalculate, "build_service")
     pipeline_cls = mocker.patch.object(cli.commands.recalculate, "UsageReportingPipeline")

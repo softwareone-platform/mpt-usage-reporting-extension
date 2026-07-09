@@ -7,6 +7,7 @@ requires-python = ">=3.12,<4"
 license = { text = "Apache-2.0 license" }
 dependencies = [
     "mpt-api-client==6.3.*",
+    "mpt-extension-contrib-custom-notifications[teams]==1.2.*",
     "mpt-extension-sdk[azure-monitor]==6.5.*",
     "mpt-tool==6.0.*",
     "psycopg[binary]==3.2.*",

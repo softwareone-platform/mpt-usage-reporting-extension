@@ -8,6 +8,7 @@ from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.mpt_client import build_service
 from mpt_usage_reporting_extension.pipeline import UsageReportingPipeline
 from mpt_usage_reporting_extension.selectors import build_optional_selector
+from mpt_usage_reporting_extension.services.execution_notifier import build_execution_notifier
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 from mpt_usage_reporting_extension.utils import to_date  # noqa: WPS347
 from mpt_usage_reporting_extension.window import resolve_window
@@ -59,6 +60,7 @@ def recalculate(  # noqa: WPS211
         api_service=build_service(),
         window=window,
         product_ids=(product_id,) if product_id else settings.product_ids,
+        notifier=build_execution_notifier(settings),
         seller_id=seller_id or "",
     )
     parameters = {"product_id": product_id, "seller_id": seller_id}
