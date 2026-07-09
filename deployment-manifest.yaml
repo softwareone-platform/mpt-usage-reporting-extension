@@ -32,6 +32,9 @@ env:
     name: MPT_API_BASE_URL
   MpProductsIds:
     name: MPT_PRODUCTS_IDS
+  MptTeamsNotificationsEnabled:
+    name: MPT_TEAMS_NOTIFICATIONS_ENABLED
+    defaultValue: "true"
   MpToolStorageType:
     name: MPT_TOOL_STORAGE_TYPE
     defaultValue: local
@@ -52,6 +55,8 @@ secrets:
     name: MPT_DATABASE_URL
   SdkApplicationInsightsConnectiaddonString:
     name: SDK_APPLICATIONINSIGHTS_CONNECTION_STRING
+  MptMsteamsWebhookUrl:
+    name: MPT_MSTEAMS_WEBHOOK_URL
   SdkExtensionApiKey:
     name: SDK_EXTENSION_API_KEY
 cronjobs:

@@ -22,4 +22,3 @@ extends:
     appName: mpt-extension-usage-reporting
     helmGitRepositoryName: github--mpt-usage-reporting-extension
     sbomWorkingDirectory: /backend
-

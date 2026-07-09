@@ -8,6 +8,7 @@ from mpt_tool.migration import DataBaseMigration
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.mpt_client import build_service
 from mpt_usage_reporting_extension.pipeline import UsageReportingPipeline
+from mpt_usage_reporting_extension.services.execution_notifier import build_execution_notifier
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 
 
@@ -23,6 +24,7 @@ class Migration(DataBaseMigration):
             api_service=build_service(),
             window=None,
             product_ids=settings.product_ids,
+            notifier=build_execution_notifier(settings),
         )
         parameters = {"product_id": None, "seller_id": None}
         asyncio.run(UsageReportingPipeline(ctx).recalculate(None, parameters))

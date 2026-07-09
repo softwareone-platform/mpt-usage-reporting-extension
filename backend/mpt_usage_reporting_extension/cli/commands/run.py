@@ -7,6 +7,7 @@ import typer
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.mpt_client import build_service
 from mpt_usage_reporting_extension.pipeline import UsageReportingPipeline
+from mpt_usage_reporting_extension.services.execution_notifier import build_execution_notifier
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 from mpt_usage_reporting_extension.utils import to_date  # noqa: WPS347
 from mpt_usage_reporting_extension.window import resolve_window
@@ -33,6 +34,7 @@ def run(
         api_service=build_service(),
         window=window,
         product_ids=settings.product_ids,
+        notifier=build_execution_notifier(settings),
     )
     parameters = {"date": date, "from_date": from_date, "till_date": till_date}
     asyncio.run(UsageReportingPipeline(ctx).run(parameters))
