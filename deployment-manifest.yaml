@@ -52,18 +52,14 @@ env:
   SdkOtelServiceName:
     name: SDK_OTEL_SERVICE_NAME
     defaultValue: Swo.Extension.UsageReporting
-  SdkOtelExporters:
-    name: SDK_OTEL_EXPORTERS
-    defaultValue: otlp
-  OtelExporterOtlpEndpoint:
-    name: OTEL_EXPORTER_OTLP_ENDPOINT
-    defaultValue: http://jaeger:4318
-  OtelExporterOtlpProtocol:
-    name: OTEL_EXPORTER_OTLP_PROTOCOL
-    defaultValue: http/protobuf
+  SdkObservabilityEnabled:
+    name: SDK_OBSERVABILITY_ENABLED
+    defaultValue: "false"
 secrets:
   MpApiToken:
     name: MPT_API_TOKEN
+  SdkApplicationInsightsConnectionString:
+    name: SDK_APPLICATIONINSIGHTS_CONNECTION_STRING
   SdkExtensionApiKey:
     name: SDK_EXTENSION_API_KEY
 cronjobs:
