@@ -16,6 +16,9 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 from mpt_usage_reporting_extension.persistence.sqlite import insights, repositories
 
 _BUSY_TIMEOUT_MS = 5000
+# WAL journalling is a persistent DB property and relies on shared memory that is
+# unsafe on SMB shares, so every connection pins the rollback journal explicitly.
+_JOURNAL_MODE = "DELETE"
 
 
 def _adapt_decimal(amount: Decimal) -> str:
@@ -39,11 +42,28 @@ def resolve_db_path() -> Path:
     return Path(db_path) if db_path else DEFAULT_DB_PATH
 
 
+def connect_sync() -> sqlite3.Connection:
+    """Open a synchronous connection with the busy timeout and pinned journal mode."""
+    connection = sqlite3.connect(resolve_db_path(), timeout=_BUSY_TIMEOUT_MS / 1000)
+    pragmas = (
+        f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}",
+        f"PRAGMA journal_mode = {_JOURNAL_MODE}",
+    )
+    try:
+        for pragma in pragmas:
+            connection.execute(pragma)
+    except sqlite3.Error:
+        connection.close()
+        raise
+    return connection
+
+
 async def _configure(connection: aiosqlite.Connection) -> None:
-    """Register the row factory, the decimal_add function, and the busy timeout."""
+    """Register the row factory, the decimal_add function, and the shared-volume pragmas."""
     connection.row_factory = sqlite3.Row
     await connection.create_function("decimal_add", 2, _decimal_add, deterministic=True)
     await connection.execute(f"PRAGMA busy_timeout = {_BUSY_TIMEOUT_MS}")
+    await connection.execute(f"PRAGMA journal_mode = {_JOURNAL_MODE}")
 
 
 class SqliteDatabase:  # noqa: WPS214

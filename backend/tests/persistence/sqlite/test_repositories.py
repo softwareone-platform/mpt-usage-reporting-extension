@@ -145,6 +145,26 @@ async def test_accumulate_is_additive_without_drift(subscription_repo, charge_fa
     assert result.spx1 == Decimal("0.8")
 
 
+async def test_accumulate_retries_when_database_is_busy(
+    mocker, subscription_repo, charge_factory, decimal_ppx1, decimal_spx1
+):
+    mocker.patch(
+        "mpt_usage_reporting_extension.persistence.sqlite.retry.asyncio.sleep",
+        autospec=True,
+    )
+    mock_execute = mocker.patch.object(
+        subscription_repo.engine.connection,
+        "execute",
+        mocker.AsyncMock(
+            side_effect=[sqlite3.OperationalError("database is locked"), mocker.AsyncMock()],
+        ),
+    )
+
+    await subscription_repo.accumulate(charge_factory(decimal_ppx1, decimal_spx1))  # act
+
+    assert mock_execute.await_count == 2
+
+
 async def test_columns_accumulate_independently(
     subscription_repo, charge_factory, decimal_first, decimal_second, sub_key, decimal_total
 ):

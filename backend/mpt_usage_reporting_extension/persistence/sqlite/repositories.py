@@ -9,6 +9,7 @@ from mpt_usage_reporting_extension.persistence.models import (
     Charge,
     SubscriptionMonthlyAccumulation,
 )
+from mpt_usage_reporting_extension.persistence.sqlite.retry import retry_on_busy
 from mpt_usage_reporting_extension.types import Month, Year
 from mpt_usage_reporting_extension.utils import month_ordinal  # noqa: WPS347
 
@@ -33,6 +34,7 @@ class _AccumulationEngine:  # noqa: WPS214
         self.connection = connection
         self.table = table
 
+    @retry_on_busy
     async def accumulate(self, *, ppx1: Decimal, spx1: Decimal, **key_fields: object) -> None:
         """Additively upsert ppx1/spx1 for the keyed bucket."""
         cursor = await self.connection.execute(
@@ -48,6 +50,7 @@ class _AccumulationEngine:  # noqa: WPS214
             row: sqlite3.Row | None = await cursor.fetchone()
         return row
 
+    @retry_on_busy
     async def delete_before(self, cutoff_ordinal: int) -> int:
         """Delete rows older than the cutoff month ordinal; return the deleted row count."""
         delete_sql = f"DELETE FROM {self.table} WHERE year * 12 + month < :cutoff"  # noqa: S608
@@ -56,6 +59,7 @@ class _AccumulationEngine:  # noqa: WPS214
         await cursor.close()
         return deleted
 
+    @retry_on_busy
     async def delete(self, **equals: object) -> int:
         """Delete rows matching the equals filter; with no filter, delete every row."""
         suffix = f" WHERE {_where_clause(equals)}" if equals else ""

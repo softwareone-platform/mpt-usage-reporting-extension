@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
 
@@ -53,6 +54,51 @@ async def test_decimal_roundtrip_preserves_precision(db):
     assert isinstance(result["ppx1"], Decimal)
     assert result["ppx1"] == Decimal("0.1")
     assert result["spx1"] == Decimal("0.2")
+
+
+async def test_configure_sets_busy_timeout(db):
+    cursor = await db.connection.execute("PRAGMA busy_timeout")
+
+    result = await cursor.fetchone()
+
+    assert result[0] == 5000
+
+
+async def test_configure_sets_journal_mode(db):
+    cursor = await db.connection.execute("PRAGMA journal_mode")
+
+    result = await cursor.fetchone()
+
+    assert result[0] == "delete"
+
+
+def test_connect_sync_sets_busy_timeout(monkeypatch, tmp_path):
+    monkeypatch.setenv("MPT_BSU_DB_PATH", str(tmp_path / "migration.db"))
+
+    with closing(database.connect_sync()) as connection:
+        result = connection.execute("PRAGMA busy_timeout").fetchone()  # act
+
+    assert result[0] == 5000
+
+
+def test_connect_sync_sets_journal_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("MPT_BSU_DB_PATH", str(tmp_path / "migration.db"))
+
+    with closing(database.connect_sync()) as connection:
+        result = connection.execute("PRAGMA journal_mode").fetchone()  # act
+
+    assert result[0] == "delete"
+
+
+def test_connect_sync_setup_failure_closes_connection(mocker, monkeypatch, tmp_path):
+    monkeypatch.setenv("MPT_BSU_DB_PATH", str(tmp_path / "migration.db"))
+    mock_connect = mocker.patch.object(database.sqlite3, "connect", autospec=True)
+    mock_connect.return_value.execute.side_effect = sqlite3.OperationalError("boom")
+
+    with pytest.raises(sqlite3.OperationalError):
+        database.connect_sync()  # act
+
+    mock_connect.return_value.close.assert_called_once()
 
 
 def test_connection_before_open_raises(tmp_path):
