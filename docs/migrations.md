@@ -26,6 +26,11 @@ by the accumulation stage.
   preserved with no float drift.
 - `20260603155923_create_accumulation_tables.py` creates
   `subscription_monthly_accumulation` and `agreement_monthly_accumulation`.
+- The database may live on a shared SMB volume (Azure Files), so every connection —
+  including migration connections via `connect_sync()` — sets a 5s busy timeout and
+  pins `journal_mode=DELETE` (WAL relies on shared memory and is unsafe over SMB),
+  and writes retry briefly on `SQLITE_BUSY` (`retry_on_busy` for repository writes,
+  `retry_on_busy_sync` for migration DDL).
 
 ## What To Add Here
 
