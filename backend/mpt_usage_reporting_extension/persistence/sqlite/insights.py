@@ -5,6 +5,7 @@ import aiosqlite
 
 from mpt_usage_reporting_extension.persistence.models import ExecutionRecord
 from mpt_usage_reporting_extension.persistence.sqlite.repositories import utc_now_iso
+from mpt_usage_reporting_extension.persistence.sqlite.retry import retry_on_busy
 from mpt_usage_reporting_extension.types import Command, ExecutionStatus, StatementStatus
 
 _INSERT_EXECUTION = (
@@ -42,6 +43,7 @@ class ExecutionRepository:
     def __init__(self, connection: aiosqlite.Connection) -> None:
         self._connection = connection
 
+    @retry_on_busy
     async def start(self, command: Command, parameters: Mapping[str, object]) -> int:
         """Insert a running execution row and return its id."""
         cursor = await self._connection.execute(
@@ -57,6 +59,7 @@ class ExecutionRepository:
         await cursor.close()
         return _require_row_id(row_id)
 
+    @retry_on_busy
     async def finish(
         self, execution_id: int, status: ExecutionStatus, result: Mapping[str, object]
     ) -> None:
@@ -90,6 +93,7 @@ class StatementProcessingRepository:
     def __init__(self, connection: aiosqlite.Connection) -> None:
         self._connection = connection
 
+    @retry_on_busy
     async def start(self, execution_id: int, statement_id: str) -> int:
         """Insert a processing row and return its id."""
         cursor = await self._connection.execute(
@@ -105,6 +109,7 @@ class StatementProcessingRepository:
         await cursor.close()
         return _require_row_id(row_id)
 
+    @retry_on_busy
     async def finish(
         self, processing_id: int, status: StatementStatus, failure_message: str | None = None
     ) -> None:
