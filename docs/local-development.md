@@ -25,6 +25,8 @@ make run
 
 The service is exposed on `http://localhost:8080`.
 
+The compose stack also starts a PostgreSQL 18 service (`postgres`) exposed on `localhost:5433` (to avoid clashing with a host PostgreSQL on `5432`) with a persistent `postgres-data` volume. The backend waits for it to become healthy before starting. Its connection string is provided through `MPT_DATABASE_URL` (see [docs/deployment.md](deployment.md)).
+
 To run in local mode (`--local`) with Jaeger tracing, use:
 
 ```bash

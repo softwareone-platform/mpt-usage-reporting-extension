@@ -58,7 +58,9 @@ env:
 secrets:
   MpApiToken:
     name: MPT_API_TOKEN
-  SdkApplicationInsightsConnectionString:
+  MptDatabaseUrl:
+    name: MPT_DATABASE_URL
+  SdkApplicationInsightsConnectiaddonString:
     name: SDK_APPLICATIONINSIGHTS_CONNECTION_STRING
   SdkExtensionApiKey:
     name: SDK_EXTENSION_API_KEY

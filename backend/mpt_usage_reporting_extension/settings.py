@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from typing import Any, Self, override
 
@@ -9,6 +10,7 @@ class ExtensionSettings(BaseExtensionSettings):
     """Extension settings."""
 
     product_ids: tuple[str, ...]
+    database_url: str
 
     @override
     @property
@@ -22,4 +24,5 @@ class ExtensionSettings(BaseExtensionSettings):
     def load(cls) -> Self:
         return cls(
             product_ids=tuple(cls.list_env("MPT_PRODUCTS_IDS")),
+            database_url=os.getenv("MPT_DATABASE_URL", ""),
         )
