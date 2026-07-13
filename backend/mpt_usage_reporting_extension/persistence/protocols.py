@@ -98,3 +98,23 @@ class StatementProcessingRepository(Protocol):
     ) -> None:
         """Stamp ended_at, final status, and optional failure message."""
         ...
+
+
+class Database(Protocol):
+    """Hand out the persistence repositories over one open connection."""
+
+    def subscription_repository(self) -> SubscriptionAccumulationRepository:
+        """Return the subscription monthly accumulation repository."""
+        ...
+
+    def agreement_repository(self) -> AgreementAccumulationRepository:
+        """Return the agreement monthly accumulation repository."""
+        ...
+
+    def execution_repository(self) -> ExecutionRepository:
+        """Return the command-execution insight repository."""
+        ...
+
+    def statement_processing_repository(self) -> StatementProcessingRepository:
+        """Return the per-statement processing insight repository."""
+        ...
