@@ -11,7 +11,24 @@ This file documents only repository-specific testing behavior.
 
 ## Test Scope
 
-The current test scope is limited to verifying that the app starts with no registered routes.
+The test scope covers extension-app startup (the app starts with no registered
+routes) and the PostgreSQL-backed persistence layer described below.
+
+## PostgreSQL-Backed Persistence Tests
+
+The tests under [`../backend/tests/persistence/postgres/`](../backend/tests/persistence/postgres/) (and the shared `db` fixture in
+[`../backend/tests/conftest.py`](../backend/tests/conftest.py)) run against a real PostgreSQL server. Each test creates a
+throwaway database, applies the schema, and drops the database on teardown, so
+tests stay isolated under random ordering.
+
+- `make test` is the canonical way to run them: it executes pytest inside the
+  compose backend container, which starts the healthy `postgres` service and
+  reaches it at `postgres:5432`.
+- Running bare `pytest` on the host fails these tests unless a PostgreSQL server
+  is reachable. Point `MPT_TEST_DATABASE_URL` at one to override the default
+  admin DSN (`postgresql://postgres:postgres@postgres:5432/usage_reporting`),
+  for example `postgresql://postgres:postgres@localhost:5433/usage_reporting`
+  for the compose service published on the host.
 
 ## Commands
 
