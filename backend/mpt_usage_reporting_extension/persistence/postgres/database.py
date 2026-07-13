@@ -4,6 +4,11 @@ from typing import Self
 import psycopg
 from psycopg.rows import DictRow, dict_row
 
+from mpt_usage_reporting_extension.persistence.postgres import repositories
+from mpt_usage_reporting_extension.persistence.protocols import (
+    SubscriptionAccumulationRepository,
+)
+
 _DATABASE_URL_ENV_VAR = "MPT_DATABASE_URL"
 _CONNECT_TIMEOUT_SECONDS = 10
 
@@ -47,6 +52,10 @@ class PostgresDatabase:
         if self._connection is None:
             raise RuntimeError("Database is not open; enter the 'async with' context first.")
         return self._connection
+
+    def subscription_repository(self) -> SubscriptionAccumulationRepository:
+        """Return the subscription monthly accumulation repository."""
+        return repositories.SubscriptionAccumulationRepository(self.connection)
 
     async def close(self) -> None:
         """Close and forget the underlying PostgreSQL connection; safe to call repeatedly."""
