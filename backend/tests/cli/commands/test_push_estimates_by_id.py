@@ -78,8 +78,10 @@ def push_collaborators(mocker):
     database = mocker.MagicMock()
     database.__aenter__ = mocker.AsyncMock(return_value=database)
     database.__aexit__ = mocker.AsyncMock(return_value=False)
-    mocker.patch.object(cli.commands.push_estimates_by_id, "resolve_db_path")
-    mocker.patch.object(cli.commands.push_estimates_by_id, "SqliteDatabase", return_value=database)
+    mocker.patch.object(cli.commands.push_estimates_by_id, "resolve_database_url")
+    mocker.patch.object(
+        cli.commands.push_estimates_by_id, "PostgresDatabase", return_value=database
+    )
     estimates = cli.commands.push_estimates_by_id
     resolve_targets = mocker.patch.object(estimates, "resolve_targets")
     uploader = mocker.patch.object(estimates, "EstimatesUploader").return_value

@@ -48,8 +48,8 @@ def updated_at_collaborators(mocker):
     database = mocker.MagicMock()
     database.__aenter__ = mocker.AsyncMock(return_value=database)
     database.__aexit__ = mocker.AsyncMock(return_value=False)
-    mocker.patch.object(estimates, "resolve_db_path")
-    mocker.patch.object(estimates, "SqliteDatabase", return_value=database)
+    mocker.patch.object(estimates, "resolve_database_url")
+    mocker.patch.object(estimates, "PostgresDatabase", return_value=database)
     subscription_ids = mocker.patch.object(estimates, "_updated_subscription_ids")
     uploader = mocker.patch.object(estimates, "EstimatesUploader").return_value
     return subscription_ids, uploader

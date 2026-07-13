@@ -18,7 +18,10 @@ from mpt_usage_reporting_extension.types import Month
 
 @pytest.fixture
 def stub_database(mocker):
-    database = mocker.patch.object(pipeline, "SqliteDatabase").return_value.__aenter__.return_value
+    mocker.patch.object(pipeline, "resolve_database_url")
+    database = mocker.patch.object(
+        pipeline, "PostgresDatabase"
+    ).return_value.__aenter__.return_value
     database.subscription_repository = mocker.Mock(return_value=mocker.AsyncMock())
     database.agreement_repository = mocker.Mock(return_value=mocker.AsyncMock())
     database.execution_repository = mocker.Mock(return_value=mocker.AsyncMock())

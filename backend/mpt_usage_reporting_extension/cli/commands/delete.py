@@ -6,9 +6,9 @@ import typer
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 
 from mpt_usage_reporting_extension.mpt_client import build_service
-from mpt_usage_reporting_extension.persistence.sqlite.database import (
-    SqliteDatabase,
-    resolve_db_path,
+from mpt_usage_reporting_extension.persistence.postgres.database import (
+    PostgresDatabase,
+    resolve_database_url,
 )
 from mpt_usage_reporting_extension.selectors import Selector, build_selector
 from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter
@@ -54,7 +54,7 @@ async def _delete(
     api_service: MPTAPIService, scope: Selector, parameters: Mapping[str, object]
 ) -> None:
     """Open the store and delete the scope's buckets."""
-    async with SqliteDatabase(resolve_db_path()) as db:
+    async with PostgresDatabase(resolve_database_url()) as db:
         tracker = ExecutionTracker(db.execution_repository())
         async with tracker.track(Command.DELETE, parameters) as execution:
             outcome = await BucketDeleter(

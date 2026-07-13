@@ -17,7 +17,7 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `EXT_WEBHOOKS_SECRETS` | - | `{"PRD-1111-1111": "123qweasd3432234"}` | Webhook secret keyed by Marketplace product id |
 | `MPT_API_BASE_URL` | `http://localhost:8000` | `https://api.platform.softwareone.com` | SoftwareOne Marketplace API URL |
 | `MPT_API_TOKEN` | - | `eyJhbGciOiJSUzI1N...` | SoftwareOne Marketplace API token |
-| `MPT_DATABASE_URL` | - | `postgresql://postgres:postgres@postgres:5432/usage_reporting` | PostgreSQL connection string; required by the PostgreSQL schema migrations (`mpt-service-cli migrate --schema` fails fast without it), unused at runtime until the PostgreSQL store lands |
+| `MPT_DATABASE_URL` | - | `postgresql://postgres:postgres@postgres:5432/usage_reporting` | PostgreSQL connection string; required at runtime by every command that touches the store and by the schema migrations (both fail fast without it) |
 | `SDK_EXTENSION_API_KEY` | - | `<extension-api-key>` | Extension API key used by the SDK to authenticate |
 | `SDK_EXTENSION_ID` | - | `EXT-1111-1111` | Extension id |
 | `SDK_EXTENSION_URL` | `http://devmock:8000` | `http://devmock:8000` | Extension service URL (devmock locally) |
@@ -29,7 +29,7 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `MPT_TOOL_STORAGE_AIRTABLE_BASE_ID` | - | `appXXXXXXXXXXXXXX` | Airtable base id when Airtable storage is enabled |
 | `MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME` | - | `MigrationTracking` | Airtable table name when Airtable storage is enabled |
 | `MPT_ORDERS_API_POLLING_INTERVAL_SECS` | `120` | `60` | Order polling interval in seconds |
-| `MPT_BSU_DB_PATH` | - | `/data/bsu.db` | Override path for the usage-accumulation SQLite database (default: `storage.db` in the backend root) |
+| `MPT_BSU_DB_PATH` | - | `/data/bsu.db` | Deprecated (removal planned in MPT-23121): path of the legacy SQLite database, no longer used at runtime |
 
 ## AppInsights Settings
 

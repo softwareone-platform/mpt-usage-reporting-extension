@@ -8,13 +8,14 @@ from mpt_api_client.resources.billing.statements import Statement
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, StatementChargeFilter
 from mpt_usage_reporting_extension.context import RunContext
+from mpt_usage_reporting_extension.persistence.postgres.database import (
+    PostgresDatabase,
+    resolve_database_url,
+)
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
+    Database,
     SubscriptionAccumulationRepository,
-)
-from mpt_usage_reporting_extension.persistence.sqlite.database import (
-    SqliteDatabase,
-    resolve_db_path,
 )
 from mpt_usage_reporting_extension.selectors import ProductSelector, Selector, SubscriptionSelector
 from mpt_usage_reporting_extension.services.accumulation_cleanup import AccumulationCleaner
@@ -57,7 +58,7 @@ class UsageReportingPipeline:  # noqa: WPS214
 
     async def run(self, parameters: Mapping[str, object]) -> None:
         """Collect charges, persist them, update estimates, then prune old rows."""
-        async with SqliteDatabase(resolve_db_path()) as db:
+        async with PostgresDatabase(resolve_database_url()) as db:
             tracker = ExecutionTracker(db.execution_repository())
             async with tracker.track(Command.RUN, parameters) as execution:
                 await self._run(db, execution)
@@ -78,7 +79,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         When ``dry_run`` is enabled, every read/compute stage still runs, but all DB delete/upsert/
         prune actions and subscription estimate updates are replaced by no-ops.
         """
-        async with SqliteDatabase(resolve_db_path()) as db:
+        async with PostgresDatabase(resolve_database_url()) as db:
             if dry_run:
                 typer.echo("Dry run: running recalculate in read-only mode (no writes or updates).")
 
@@ -101,7 +102,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         finally:
             self._ctx.charge_filter = previous_filter
 
-    async def _run(self, db: SqliteDatabase, execution: Execution) -> None:
+    async def _run(self, db: Database, execution: Execution) -> None:
         """Collect charges, persist them, update estimates, then prune old rows.
 
         Estimate-upload failures are recorded on the execution handle (``has_errors``) rather than
@@ -130,7 +131,7 @@ class UsageReportingPipeline:  # noqa: WPS214
     async def _refill(
         self,
         reset_scope: ResetScope,
-        db: SqliteDatabase,
+        db: Database,
         execution: Execution,
         *,
         dry_run: bool,
@@ -171,7 +172,7 @@ class UsageReportingPipeline:  # noqa: WPS214
     async def _reset(
         self,
         scope: Selector | None,
-        db: SqliteDatabase,
+        db: Database,
         *,
         dry_run: bool,
     ) -> ResetScope:
