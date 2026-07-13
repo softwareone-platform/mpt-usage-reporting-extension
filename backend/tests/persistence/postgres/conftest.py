@@ -12,8 +12,23 @@ def year():
 
 
 @pytest.fixture
+def prev_year():
+    return 2025
+
+
+@pytest.fixture
 def month():
     return 5
+
+
+@pytest.fixture
+def last_month():
+    return 12
+
+
+@pytest.fixture
+def first_month():
+    return 1
 
 
 @pytest.fixture
