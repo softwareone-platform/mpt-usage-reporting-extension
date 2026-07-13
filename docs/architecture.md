@@ -10,7 +10,7 @@ below.
 `mpt-usage-reporting-extension` is a SoftwareOne Marketplace Platform (MPT)
 extension that reports billing subscription usage. Its product is a **CLI batch
 job** that selects billing statements, streams their charges, accumulates them
-per subscription/agreement and month, persists the totals to a local SQLite
+per subscription/agreement and month, persists the totals to a PostgreSQL
 store, and pushes the resulting price estimates back to each subscription. A
 bare **extension app** (`app.py`) is kept only so `mpt-ext run` can serve the
 SDK's built-in endpoints; it registers no routes of its own.
@@ -48,7 +48,7 @@ as the `mpt-billing-subscription-usage` console script (`pyproject.toml` `[proje
 
 `cli.run` resolves the inputs (steps 1–2), then hands a `RunContext` to
 `UsageReportingPipeline` (`pipeline.py`), which runs the remaining stages inside a
-single `SqliteDatabase` context — opened first, so a database failure aborts before
+single `PostgresDatabase` context — opened first, so a database failure aborts before
 any API work. Each stage is a service constructed with only the dependencies it needs
 (the API service and/or the repositories); `RunContext` carries the run inputs.
 
@@ -58,47 +58,39 @@ any API work. Each stage is a service constructed with only the dependencies it 
 4. `ChargeStreamer` (`services/charges.py`) streams charges line-by-line (JSONL).
 5. `ChargeAccumulator` (`accumulation.py`) groups charges by
    `AccumulationKey` = `(agreement_id, subscription_id, year, month)` into `ChargeTotals`.
-6. `AccumulationPersister` (`services/charge_persistence.py`) upserts the totals into SQLite.
+6. `AccumulationPersister` (`services/charge_persistence.py`) upserts the totals into PostgreSQL.
 7. `EstimatesUploader` (`services/estimates_uploader.py`) computes each real subscription's
-   estimate from SQLite — current calendar-month `PPxM`/`SPxM` and trailing-12-month
+   estimate from PostgreSQL — current calendar-month `PPxM`/`SPxM` and trailing-12-month
    `PPxY`/`SPxY` sums, anchored on the previous (latest completed) calendar month — and
    concurrently `PUT`s `{"price": {PPxM, SPxM, PPxY, SPxY}}` back to the subscription via the
    MPT API, skipping synthetic (`agreement_additional_*`) and dateless buckets. It renders a
    per-subscription report (values + `OK`/`FAILED`) with `[k/N]` progress and exits non-zero on
    any failure.
 
-## Persistence (SQLite)
+## Persistence (PostgreSQL)
 
-`backend/mpt_usage_reporting_extension/persistence/sqlite/` holds the store:
+`backend/mpt_usage_reporting_extension/persistence/postgres/` holds the store,
+implementing the shared interfaces in `persistence/protocols.py` (including the
+`Database` protocol the pipeline is annotated against):
 
-- `database.py` — `SqliteDatabase` context manager (Decimal handling, busy timeout).
-- `repositories.py` — subscription and agreement accumulation repositories with additive upserts.
+- `database.py` — `PostgresDatabase` async context manager (one autocommit
+  `psycopg` connection per run, dict rows), `resolve_database_url()` (reads
+  `MPT_DATABASE_URL`, fails fast when unset), and `connect_sync()` for migrations.
+- `repositories/` — one module per repository: `engine.py` (the shared additive-upsert
+  engine: `INSERT ... ON CONFLICT ... DO UPDATE SET ppx1 = ppx1 + EXCLUDED.ppx1`),
+  `subscription.py`, and `agreement.py`. Amounts are `NUMERIC`, so accumulation is
+  exact decimal arithmetic; timestamps are `TIMESTAMPTZ` written as aware UTC datetimes.
+- `insights.py` — command-execution and per-statement processing repositories
+  (`INSERT ... RETURNING id`).
 - Tables (created by `backend/migrations/`): `subscription_monthly_accumulation`
   (PK `subscription_id, year, month, agreement_id`) and
   `agreement_monthly_accumulation` (PK `agreement_id, year, month`); both store `ppx1`, `spx1`, `updated_at`.
 
-The DB file defaults to the `DEFAULT_DB_PATH` constant (`storage.db` in the
-backend root) and can be overridden with the `MPT_BSU_DB_PATH` environment variable.
+The connection string comes from the `MPT_DATABASE_URL` environment variable.
 See [migrations.md](migrations.md).
 
-### Concurrency on the shared volume
-
-In production the DB file lives on a shared (SMB) persistent volume that the API
-deployment and the `billing-subscription-usage` CronJob write to concurrently.
-The store must therefore be configured for safe multi-writer access:
-
-- **`PRAGMA busy_timeout = 5000` (ms) on every connection** — set in
-  `database.py` (`_BUSY_TIMEOUT_MS`). This is the most important setting. The
-  SQLite default is `0`, which fails immediately with `SQLITE_BUSY` as soon as
-  another writer holds the lock; on the shared volume a writer must instead wait
-  for the lock to be released. Do not lower it to `0`.
-- **Do not enable WAL mode.** `journal_mode=WAL` depends on shared-memory/mmap
-  coordination that does not work over SMB and can misbehave or corrupt the
-  database. Keep the default rollback journal (`DELETE`, or `TRUNCATE`) and never
-  set `journal_mode=WAL`.
-- **Retry writes on `SQLITE_BUSY` / "database is locked".** Even with the busy
-  timeout, a heavily contended write can still surface a lock error, so writers
-  should retry a few times with a small backoff before giving up.
+The previous SQLite store (`persistence/sqlite/`, `MPT_BSU_DB_PATH`) remains in
+the tree but is no longer used at runtime; MPT-23121 removes it.
 
 ## Extension app
 
@@ -115,7 +107,7 @@ can serve the SDK's built-in endpoints.
 | `selectors.py` | `--product-id`/`--agreement-id`/`--subscription-id`/`--seller-id` selectors, shared by `delete`, `recalculate`, and `push-estimates` |
 | `services/statements.py`, `services/charges.py` | Statement selection and charge streaming from the MPT API |
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
-| `services/charge_persistence.py`, `services/bucket_clean.py`, `persistence/` | Persisting accumulated totals to SQLite and deleting buckets by scope/month range |
+| `services/charge_persistence.py`, `services/bucket_clean.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
 | `app.py` | Bare `ExtensionApp` served by `mpt-ext run` |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |
@@ -141,4 +133,4 @@ The container image is built from the multi-stage `Dockerfile` and started via
 - [testing.md](testing.md) — test strategy and execution
 - [deployment.md](deployment.md) — configuration and deployment model
 - [external-integrations.md](external-integrations.md) — external systems
-- [migrations.md](migrations.md) — migration workflow and the SQLite store
+- [migrations.md](migrations.md) — migration workflow and the database schema

@@ -5,13 +5,13 @@ from dataclasses import dataclass
 
 import typer
 
+from mpt_usage_reporting_extension.persistence.postgres.database import (
+    PostgresDatabase,
+    resolve_database_url,
+)
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
     SubscriptionAccumulationRepository,
-)
-from mpt_usage_reporting_extension.persistence.sqlite.database import (
-    SqliteDatabase,
-    resolve_db_path,
 )
 from mpt_usage_reporting_extension.services.execution_tracker import ExecutionTracker
 from mpt_usage_reporting_extension.types import Command, Month, Year
@@ -86,7 +86,7 @@ class AccumulationCleaner:
 
 async def do_cleanup(anchor: dt.date, parameters: Mapping[str, object]) -> CleanupOutcome:
     """Open the store and prune both tables to the 18-month window ending at the anchor month."""
-    async with SqliteDatabase(resolve_db_path()) as db:
+    async with PostgresDatabase(resolve_database_url()) as db:
         tracker = ExecutionTracker(db.execution_repository())
         async with tracker.track(Command.CLEANUP, parameters) as execution:
             outcome = await AccumulationCleaner(

@@ -53,8 +53,9 @@ async def test_cleanup_dry_run_skips_prune_calls(mocker):
 
 
 async def test_do_cleanup_opens_store_and_prunes(mocker):
+    mocker.patch("mpt_usage_reporting_extension.services.accumulation_cleanup.resolve_database_url")
     database = mocker.patch(
-        "mpt_usage_reporting_extension.services.accumulation_cleanup.SqliteDatabase"
+        "mpt_usage_reporting_extension.services.accumulation_cleanup.PostgresDatabase"
     ).return_value.__aenter__.return_value
     subscription_repo = mocker.AsyncMock()
     subscription_repo.prune.return_value = 2
