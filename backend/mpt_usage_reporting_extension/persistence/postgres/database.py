@@ -6,6 +6,7 @@ from psycopg.rows import DictRow, dict_row
 
 from mpt_usage_reporting_extension.persistence.postgres import repositories
 from mpt_usage_reporting_extension.persistence.protocols import (
+    AgreementAccumulationRepository,
     SubscriptionAccumulationRepository,
 )
 
@@ -56,6 +57,10 @@ class PostgresDatabase:
     def subscription_repository(self) -> SubscriptionAccumulationRepository:
         """Return the subscription monthly accumulation repository."""
         return repositories.SubscriptionAccumulationRepository(self.connection)
+
+    def agreement_repository(self) -> AgreementAccumulationRepository:
+        """Return the agreement monthly accumulation repository."""
+        return repositories.AgreementAccumulationRepository(self.connection)
 
     async def close(self) -> None:
         """Close and forget the underlying PostgreSQL connection; safe to call repeatedly."""
