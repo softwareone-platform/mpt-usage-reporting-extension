@@ -14,8 +14,8 @@ def stub_database(mocker):
     database = mocker.MagicMock()
     database.__aenter__ = mocker.AsyncMock(return_value=database)
     database.__aexit__ = mocker.AsyncMock(return_value=False)
-    mocker.patch.object(cli.commands.status, "resolve_db_path")
-    mocker.patch.object(cli.commands.status, "SqliteDatabase", return_value=database)
+    mocker.patch.object(cli.commands.status, "resolve_database_url")
+    mocker.patch.object(cli.commands.status, "PostgresDatabase", return_value=database)
     return database
 
 

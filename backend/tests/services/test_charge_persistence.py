@@ -4,16 +4,12 @@ import pytest
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation
 from mpt_usage_reporting_extension.persistence.models import Charge
-from mpt_usage_reporting_extension.persistence.sqlite.database import SqliteDatabase
 from mpt_usage_reporting_extension.services.charge_persistence import AccumulationPersister
 
 
 @pytest.fixture
-async def repos(tmp_path, schema):
-    async with SqliteDatabase(tmp_path / "storage.db") as database:
-        for statement in schema:
-            await database.connection.execute(statement)  # noqa: WPS476
-        yield database.subscription_repository(), database.agreement_repository()
+def repos(db):
+    return db.subscription_repository(), db.agreement_repository()
 
 
 async def test_persist_writes_each_bucket_to_both_repos(mocker):
