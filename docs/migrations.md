@@ -32,6 +32,28 @@ by the accumulation stage.
   and writes retry briefly on `SQLITE_BUSY` (`retry_on_busy` for repository writes,
   `retry_on_busy_sync` for migration DDL).
 
+### PostgreSQL store
+
+PostgreSQL schema migrations live in the same `backend/migrations/` folder as the
+SQLite ones and run through the same `make migrate-schema` invocation; their later
+timestamps make them run after the SQLite pair.
+
+- Connections resolve the URL from the `MPT_DATABASE_URL` environment variable via
+  `mpt_usage_reporting_extension.persistence.postgres.database.connect_sync()`. When the
+  variable is unset the migration fails fast instead of silently marking the
+  environment as migrated, so `MPT_DATABASE_URL` must be set wherever
+  `mpt-service-cli migrate --schema` runs.
+- Monetary columns use native `NUMERIC` (psycopg round-trips `decimal.Decimal`
+  losslessly), timestamps use `TIMESTAMPTZ`, and surrogate keys use
+  `BIGINT GENERATED ALWAYS AS IDENTITY` (inserts must use `RETURNING id`).
+- `20260713120000_create_postgres_accumulation_tables.py` creates
+  `subscription_monthly_accumulation` and `agreement_monthly_accumulation`;
+  `20260713120100_create_postgres_insights_tables.py` creates `command_execution`
+  and `statement_processing`.
+- No busy-retry equivalent is needed: the SQLite retry exists only for SMB file
+  locking, while PostgreSQL handles concurrent DDL with proper locks.
+- The SQLite migrations remain in place until MPT-23121 removes SQLite support.
+
 ## What To Add Here
 
 Add repository-specific migration details only when they exist, for example:
