@@ -33,3 +33,36 @@ def test_connect_sync_uses_resolved_url(mocker, monkeypatch):
 
     mock_connect.assert_called_once_with("postgresql://user:pass@host:5432/db")
     assert result is mock_connect.return_value
+
+
+def test_connection_before_open_raises():
+    store = database.PostgresDatabase("postgresql://user:pass@host:5432/db")
+
+    with pytest.raises(RuntimeError, match="not open"):
+        _ = store.connection  # act  # noqa: WPS122
+
+
+async def test_context_manager_opens_and_closes(pg_admin_dsn):
+    store = database.PostgresDatabase(pg_admin_dsn)
+    async with store:
+        connection = store.connection
+        opened = not connection.closed
+
+    result = connection.closed
+
+    assert opened
+    assert result
+    with pytest.raises(RuntimeError, match="not open"):
+        _ = store.connection  # noqa: WPS122
+
+
+async def test_close_is_safe_to_repeat(pg_admin_dsn):
+    store = database.PostgresDatabase(pg_admin_dsn)
+    async with store:
+        opened = not store.connection.closed
+
+    await store.close()  # act: second close after the context already closed
+
+    assert opened
+    with pytest.raises(RuntimeError, match="not open"):
+        _ = store.connection  # noqa: WPS122
