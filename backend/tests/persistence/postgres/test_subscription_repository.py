@@ -3,6 +3,9 @@ from decimal import Decimal
 
 from mpt_usage_reporting_extension.persistence.models import SubscriptionMonthlyAccumulation
 from mpt_usage_reporting_extension.persistence.postgres.repositories import engine
+from mpt_usage_reporting_extension.services.estimates_uploader import (
+    _EstimateCalculator,  # noqa: PLC2701
+)
 
 
 async def test_accumulate_inserts_new_row(
@@ -94,6 +97,153 @@ async def test_key_distinguishes_month(
     ).ppx1 == decimal_second
 
 
+async def test_monthly_estimate_sums_the_month(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    subscription_id,
+    year,
+    month,
+    decimal_total,
+):
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+    await subscription_repo.accumulate(charge_factory(decimal_second, decimal_zero))
+
+    result = await _EstimateCalculator(subscription_repo).estimate(
+        subscription_id, year, month
+    )  # act
+
+    assert result.ppxm == decimal_total
+
+
+async def test_monthly_estimate_ignores_other_months(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    subscription_id,
+    year,
+    month,
+    other_month,
+):
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero, month=month))
+    await subscription_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, month=other_month)
+    )
+
+    result = await _EstimateCalculator(subscription_repo).estimate(
+        subscription_id, year, other_month
+    )  # act
+
+    assert result.ppxm == decimal_second
+
+
+async def test_monthly_estimate_is_zero_when_absent(subscription_repo, year, month, decimal_zero):
+    result = await _EstimateCalculator(subscription_repo).estimate(  # act
+        "SUB-MISSING", year, month
+    )
+
+    assert result.ppxm == decimal_zero
+    assert result.ppxy == decimal_zero
+
+
+async def test_yearly_estimate_spans_a_year_boundary(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    subscription_id,
+    year,
+    prev_year,
+    last_month,
+    first_month,
+    decimal_total,
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=prev_year, month=last_month)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, year=year, month=first_month)
+    )
+
+    result = await _EstimateCalculator(subscription_repo).estimate(
+        subscription_id, year, first_month
+    )  # act
+
+    assert result.ppxy == decimal_total
+
+
+async def test_yearly_estimate_excludes_old_months(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    decimal_zero,
+    subscription_id,
+    year,
+    prev_year,
+    month,
+    other_month,
+):
+    # Trailing 12 months ending (2026, 5): (2025, 6) is the oldest included month, (2025, 5) is out.
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, year=prev_year, month=other_month)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_second, decimal_zero, year=prev_year, month=month)
+    )
+
+    result = await _EstimateCalculator(subscription_repo).estimate(
+        subscription_id, year, month
+    )  # act
+
+    assert result.ppxy == decimal_first
+
+
+async def test_monthly_estimate_reports_pp_and_sp(
+    subscription_repo, charge_factory, decimal_ppx1, decimal_spx1, subscription_id, year, month
+):
+    await subscription_repo.accumulate(charge_factory(decimal_ppx1, decimal_spx1))
+
+    result = await _EstimateCalculator(subscription_repo).estimate(
+        subscription_id, year, month
+    )  # act
+
+    assert result.ppxm == decimal_ppx1
+    assert result.spxm == decimal_spx1
+
+
+async def test_yearly_estimate_sums_pp_and_sp(
+    subscription_repo,
+    charge_factory,
+    decimal_first,
+    decimal_second,
+    subscription_id,
+    year,
+    prev_year,
+    last_month,
+    first_month,
+    decimal_total,
+):
+    await subscription_repo.accumulate(
+        charge_factory(decimal_first, decimal_second, year=prev_year, month=last_month)
+    )
+    await subscription_repo.accumulate(
+        charge_factory(decimal_second, decimal_first, year=year, month=first_month)
+    )
+
+    result = await _EstimateCalculator(subscription_repo).estimate(
+        subscription_id, year, first_month
+    )  # act
+
+    assert result.ppxy == decimal_total
+    assert result.spxy == decimal_total
+
+
 async def test_updated_returns_subscription_buckets(
     subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
 ):
@@ -125,6 +275,30 @@ async def test_updated_excludes_other_dates(
     await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
 
     result = [stored async for stored in subscription_repo.updated(dt.date(2026, 5, 8))]  # act
+
+    assert result == []
+
+
+async def test_updated_includes_last_second_of_utc_day(
+    subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
+):
+    write_time = dt.datetime.fromisoformat("2026-05-07T23:59:59Z")
+    mocker.patch.object(engine, "utc_now", return_value=write_time)
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+
+    result = [stored async for stored in subscription_repo.updated(dt.date(2026, 5, 7))]  # act
+
+    assert len(result) == 1
+
+
+async def test_updated_excludes_next_utc_midnight(
+    subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
+):
+    write_time = dt.datetime.fromisoformat("2026-05-08T00:00:00Z")
+    mocker.patch.object(engine, "utc_now", return_value=write_time)
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+
+    result = [stored async for stored in subscription_repo.updated(dt.date(2026, 5, 7))]  # act
 
     assert result == []
 
