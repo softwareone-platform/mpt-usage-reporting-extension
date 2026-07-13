@@ -37,6 +37,16 @@ def other_month():
 
 
 @pytest.fixture
+def bad_month():
+    return 13
+
+
+@pytest.fixture
+def bad_year():
+    return 99
+
+
+@pytest.fixture
 def subscription_id():
     return "SUB-1234-5678"
 
@@ -105,3 +115,8 @@ def charge_factory(subscription_id, agreement_id, year, month):
 @pytest.fixture
 def subscription_repo(db):
     return db.subscription_repository()
+
+
+@pytest.fixture
+def agreement_repo(db):
+    return db.agreement_repository()
