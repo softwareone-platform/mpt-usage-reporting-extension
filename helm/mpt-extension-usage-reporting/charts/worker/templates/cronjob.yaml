@@ -41,17 +41,6 @@ spec:
                     name: {{ include "common.fullname" $ }}
                 - secretRef:
                     name: {{ include "common.fullname" $ }}
-              {{- if $.Values.global.persistence.enabled }}
-              volumeMounts:
-                - name: data
-                  mountPath: {{ $.Values.global.persistence.mountPath }}
-              {{- end }}
-          {{- if $.Values.global.persistence.enabled }}
-          volumes:
-            - name: data
-              persistentVolumeClaim:
-                claimName: {{ $.Values.global.persistence.existingClaim | default $.Values.global.persistence.claimName }}
-          {{- end }}
           restartPolicy: Never
           terminationGracePeriodSeconds: 30
 ---
