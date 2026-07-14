@@ -164,7 +164,7 @@ async def test_delete_skips_missing_agreement(deleter, subscription_repo, subscr
     subscription_repo.delete.assert_awaited_once_with(subscription_id="SUB-1")
 
 
-async def test_delete_product_zero_delete_keeps_scope_empty(
+async def test_delete_product_zero_delete_registers_statement_agreements(
     deleter, subscription_repo, agreement_repo, subscriptions
 ):
     subscriptions.agreements = ["AGR-1"]
@@ -174,9 +174,32 @@ async def test_delete_product_zero_delete_keeps_scope_empty(
     result = await deleter.delete(ProductSelector("PRD-1"))
 
     assert result == DeleteOutcome()
+    assert deleter.statement_agreements == frozenset(("AGR-1",))
     subscription_repo.subscriptions_by_agreement.assert_called_once_with("AGR-1")
     subscription_repo.delete.assert_not_called()
     agreement_repo.delete.assert_awaited_once_with(agreement_id="AGR-1")
+
+
+async def test_delete_agreement_zero_delete_registers_statement_agreement(
+    deleter, subscription_repo, agreement_repo
+):
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([])
+    agreement_repo.delete.return_value = 0
+
+    result = await deleter.delete(AgreementSelector("AGR-9"))
+
+    assert result == DeleteOutcome()
+    assert deleter.statement_agreements == frozenset(("AGR-9",))
+
+
+async def test_delete_subscription_zero_delete_returns_empty_outcome(deleter, subscription_repo):
+    subscription_repo.stored_agreements = []
+    subscription_repo.delete.return_value = 0
+
+    result = await deleter.delete(SubscriptionSelector("SUB-1"))
+
+    assert result == DeleteOutcome()
+    assert deleter.statement_agreements == frozenset()
 
 
 async def test_delete_none_clears_everything(deleter, subscription_repo, agreement_repo):
