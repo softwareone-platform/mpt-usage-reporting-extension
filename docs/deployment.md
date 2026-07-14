@@ -29,7 +29,6 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `MPT_TOOL_STORAGE_AIRTABLE_BASE_ID` | - | `appXXXXXXXXXXXXXX` | Airtable base id when Airtable storage is enabled |
 | `MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME` | - | `MigrationTracking` | Airtable table name when Airtable storage is enabled |
 | `MPT_ORDERS_API_POLLING_INTERVAL_SECS` | `120` | `60` | Order polling interval in seconds |
-| `MPT_BSU_DB_PATH` | - | `/data/bsu.db` | Deprecated (removal planned in MPT-23121): path of the legacy SQLite database, no longer used at runtime |
 
 ## AppInsights Settings
 

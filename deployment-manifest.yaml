@@ -27,21 +27,11 @@ api:
         uri: /
 worker:
   enabled: false
-persistence:
-  enabled: true
-  claimName: mpt-extension-usage-reporting-data
-  mountPath: /data
-  size: 1Gi
-  accessMode: ReadWriteMany
-  existingClaim: mpt-extension-usage-reporting-data
 env:
   apiFqdn:
     name: MPT_API_BASE_URL
   MpProductsIds:
     name: MPT_PRODUCTS_IDS
-  MptBsuDbPath:
-    name: MPT_BSU_DB_PATH
-    defaultValue: /data/bsu.db
   MpToolStorageType:
     name: MPT_TOOL_STORAGE_TYPE
     defaultValue: local

@@ -17,57 +17,6 @@ _DEFAULT_TEST_DATABASE_URL = "postgresql://postgres:postgres@postgres:5432/usage
 
 
 @pytest.fixture
-def schema():
-    return (
-        """
-        CREATE TABLE subscription_monthly_accumulation (
-            subscription_id TEXT NOT NULL,
-            agreement_id TEXT NOT NULL,
-            year INTEGER NOT NULL CHECK (year BETWEEN 1000 AND 9999),
-            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
-            ppx1 DECIMAL NOT NULL DEFAULT '0',
-            spx1 DECIMAL NOT NULL DEFAULT '0',
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY (subscription_id, agreement_id, year, month)
-        )
-        """,
-        """
-        CREATE TABLE agreement_monthly_accumulation (
-            agreement_id TEXT NOT NULL,
-            year INTEGER NOT NULL CHECK (year BETWEEN 1000 AND 9999),
-            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
-            ppx1 DECIMAL NOT NULL DEFAULT '0',
-            spx1 DECIMAL NOT NULL DEFAULT '0',
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY (agreement_id, year, month)
-        )
-        """,
-        """
-        CREATE TABLE command_execution (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            command TEXT NOT NULL,
-            parameters TEXT NOT NULL,
-            status TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            completed_at TEXT,
-            result TEXT
-        )
-        """,
-        """
-        CREATE TABLE statement_processing (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            execution_id INTEGER NOT NULL REFERENCES command_execution(id),
-            statement_id TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            ended_at TEXT,
-            status TEXT NOT NULL,
-            failure_message TEXT
-        )
-        """,
-    )
-
-
-@pytest.fixture
 def pg_schema():
     return (
         """
