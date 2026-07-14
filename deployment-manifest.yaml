@@ -27,44 +27,24 @@ api:
         uri: /
 worker:
   enabled: false
-persistence:
-  enabled: true
-  claimName: mpt-extension-usage-reporting-data
-  mountPath: /data
-  size: 1Gi
-  accessMode: ReadWriteMany
-  existingClaim: mpt-extension-usage-reporting-data
 env:
-  MpBaseUrl:
+  apiFqdn:
     name: MPT_API_BASE_URL
-    defaultValue: "https://api.platform.softwareone.com"
   MpProductsIds:
     name: MPT_PRODUCTS_IDS
-    defaultValue: default
-  MptBsuDbPath:
-    name: MPT_BSU_DB_PATH
-    defaultValue: /data/bsu.db
   MpToolStorageType:
     name: MPT_TOOL_STORAGE_TYPE
     defaultValue: local
   SdkExtensionId:
     name: SDK_EXTENSION_ID
-    defaultValue: EXT-2415-5207
   SdkExtensionUrl:
     name: SDK_EXTENSION_URL
-    defaultValue: https://EXT-2415-5207.ext.s1.show
   SdkOtelServiceName:
     name: SDK_OTEL_SERVICE_NAME
     defaultValue: Swo.Extension.UsageReporting
-  SdkOtelExporters:
-    name: SDK_OTEL_EXPORTERS
-    defaultValue: otlp
-  OtelExporterOtlpEndpoint:
-    name: OTEL_EXPORTER_OTLP_ENDPOINT
-    defaultValue: http://jaeger:4318
-  OtelExporterOtlpProtocol:
-    name: OTEL_EXPORTER_OTLP_PROTOCOL
-    defaultValue: http/protobuf
+  SdkObservabilityEnabled:
+    name: SDK_OBSERVABILITY_ENABLED
+    defaultValue: "false"
 secrets:
   MpApiToken:
     name: MPT_API_TOKEN

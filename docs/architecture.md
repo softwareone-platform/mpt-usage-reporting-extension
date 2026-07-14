@@ -36,7 +36,7 @@ as the `mpt-billing-subscription-usage` console script (`pyproject.toml` `[proje
   `--product-id` / `--agreement-id` / `--subscription-id` / `--seller-id`).
   `--product-id`/`--seller-id` are resolved to their agreements via the commerce API and clear both
   tables by `agreement_id`; `--subscription-id` clears only that subscription's buckets (the shared
-  agreement bucket aggregates its siblings). See `services/bucket_clean.py` (`BucketCleaner`).
+  agreement bucket aggregates its siblings). See `services/bucket_delete.py` (`BucketDeleter`).
 - `recalculate` — rebuild a scope idempotently: `delete` the scope's buckets, then run the normal
   fill (select -> accumulate -> persist -> push estimates) so re-runs do not double-count. Optional
   `--product-id` / `--seller-id` (none = all configured products); requires `--from-date` and
@@ -89,9 +89,6 @@ implementing the shared interfaces in `persistence/protocols.py` (including the
 The connection string comes from the `MPT_DATABASE_URL` environment variable.
 See [migrations.md](migrations.md).
 
-The previous SQLite store (`persistence/sqlite/`, `MPT_BSU_DB_PATH`) remains in
-the tree but is no longer used at runtime; MPT-23121 removes it.
-
 ## Extension app
 
 `backend/mpt_usage_reporting_extension/app.py` instantiates a bare
@@ -107,7 +104,7 @@ can serve the SDK's built-in endpoints.
 | `selectors.py` | `--product-id`/`--agreement-id`/`--subscription-id`/`--seller-id` selectors, shared by `delete`, `recalculate`, and `push-estimates` |
 | `services/statements.py`, `services/charges.py` | Statement selection and charge streaming from the MPT API |
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
-| `services/charge_persistence.py`, `services/bucket_clean.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
+| `services/charge_persistence.py`, `services/bucket_delete.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
 | `app.py` | Bare `ExtensionApp` served by `mpt-ext run` |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |
