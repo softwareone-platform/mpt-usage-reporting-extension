@@ -11,32 +11,12 @@ If the repository does not yet have repository-specific migration rules, keep th
 
 ## Repository-Specific Details
 
-### Persistent SQLite store
-
-Schema migrations in this repository create and evolve a local SQLite database used
-by the accumulation stage.
-
-- The database file defaults to `storage.db` in the backend root. Override the
-  location with the `MPT_BSU_DB_PATH` environment variable.
-- The file and the migration state file (`.migrations-state.json`) are gitignored;
-  they are recreated by running `make migrate-schema`.
-- Connection, schema creation, and decimal handling live in
-  `mpt_usage_reporting_extension.persistence.sqlite.database`. Monetary columns are stored
-  as `DECIMAL` (TEXT) and round-tripped through `decimal.Decimal` so precision is
-  preserved with no float drift.
-- `20260603155923_create_accumulation_tables.py` creates
-  `subscription_monthly_accumulation` and `agreement_monthly_accumulation`.
-- The database may live on a shared SMB volume (Azure Files), so every connection —
-  including migration connections via `connect_sync()` — sets a 5s busy timeout and
-  pins `journal_mode=DELETE` (WAL relies on shared memory and is unsafe over SMB),
-  and writes retry briefly on `SQLITE_BUSY` (`retry_on_busy` for repository writes,
-  `retry_on_busy_sync` for migration DDL).
-
 ### PostgreSQL store
 
-PostgreSQL schema migrations live in the same `backend/migrations/` folder as the
-SQLite ones and run through the same `make migrate-schema` invocation; their later
-timestamps make them run after the SQLite pair.
+Schema migrations in this repository create and evolve the PostgreSQL database used
+by the accumulation stage. They live in `backend/migrations/` and run through
+`make migrate-schema`. The migration state file (`.migrations-state.json`) is
+gitignored; it is recreated by running `make migrate-schema`.
 
 - Connections resolve the URL from the `MPT_DATABASE_URL` environment variable via
   `mpt_usage_reporting_extension.persistence.postgres.database.connect_sync()`. When the
@@ -50,9 +30,8 @@ timestamps make them run after the SQLite pair.
   `subscription_monthly_accumulation` and `agreement_monthly_accumulation`;
   `20260713120100_create_postgres_insights_tables.py` creates `command_execution`
   and `statement_processing`.
-- No busy-retry equivalent is needed: the SQLite retry exists only for SMB file
-  locking, while PostgreSQL handles concurrent DDL with proper locks.
-- The SQLite migrations remain in place until MPT-23121 removes SQLite support.
+- The DDL is idempotent (`IF NOT EXISTS`), so re-running a migration against an
+  environment with lost or missing state is safe.
 
 ## What To Add Here
 
