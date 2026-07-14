@@ -321,6 +321,109 @@ async def test_recalculate_keeps_agreement_only_resets(
     assert accumulate.await_args.args[1] is None
 
 
+async def test_recalculate_product_scope_bootstraps_empty_database(
+    mocker,
+    stub_database,
+    usage,
+    selector,
+    deleter,
+    charge_accumulation_factory,
+    charge_totals_factory,
+):
+    deleter.delete.return_value = DeleteOutcome()
+    deleter.statement_agreements = frozenset(("AGR-1", "AGR-2"))
+    mocker.patch.object(pipeline, "ChargeStreamer")
+    accumulate = mocker.AsyncMock(
+        return_value=charge_totals_factory(
+            charge_accumulation_factory("SUB-1", agreement_id="AGR-1"),
+            charge_accumulation_factory("SUB-2", agreement_id="AGR-2"),
+        )
+    )
+    mocker.patch.object(pipeline, "ChargeAccumulator").return_value.accumulate = accumulate
+    persister = mocker.patch.object(pipeline, "AccumulationPersister").return_value
+    persister.persist = mocker.AsyncMock()
+    mocker.patch.object(pipeline, "EstimatesUploader").return_value.update = mocker.AsyncMock(
+        return_value=mocker.Mock(has_failures=False)
+    )
+
+    await usage.recalculate(ProductSelector("PRD-1"), {})  # act
+
+    persisted, agreement_ids = persister.persist.call_args.args
+    assert [bucket.subscription_id for bucket in persisted] == ["SUB-1", "SUB-2"]
+    assert agreement_ids == frozenset(("AGR-1", "AGR-2"))
+    assert accumulate.await_args.args[1] is None  # nothing was deleted, so no charge filter
+
+
+async def test_recalculate_subscription_scope_bootstraps_empty_database(
+    mocker,
+    stub_database,
+    usage,
+    selector,
+    deleter,
+    ctx,
+    charge_accumulation_factory,
+    charge_totals_factory,
+):
+    deleter.delete.return_value = DeleteOutcome()
+    deleter.statement_agreements = frozenset()
+    mocker.patch.object(pipeline, "ChargeStreamer")
+    accumulate = mocker.AsyncMock(
+        return_value=charge_totals_factory(
+            charge_accumulation_factory("SUB-1", agreement_id="AGR-1"),
+            charge_accumulation_factory("SUB-2", agreement_id="AGR-1"),
+        )
+    )
+    mocker.patch.object(pipeline, "ChargeAccumulator").return_value.accumulate = accumulate
+    persister = mocker.patch.object(pipeline, "AccumulationPersister").return_value
+    persister.persist = mocker.AsyncMock()
+    mocker.patch.object(pipeline, "EstimatesUploader").return_value.update = mocker.AsyncMock(
+        return_value=mocker.Mock(has_failures=False)
+    )
+
+    await usage.recalculate(SubscriptionSelector("SUB-1"), {})  # act
+
+    persisted, agreement_ids = persister.persist.call_args.args
+    assert [bucket.subscription_id for bucket in persisted] == ["SUB-1"]
+    assert agreement_ids == frozenset()
+    assert accumulate.await_args.args[1].subscription_ids == frozenset(("SUB-1",))
+    # no stored agreements to narrow by, so statements fall back to the product scope
+    selector.select.assert_awaited_once_with(ctx.window, ("PRD-1",), "", ())
+
+
+async def test_recalculate_agreement_scope_with_intact_agreement_bucket(
+    mocker,
+    stub_database,
+    usage,
+    selector,
+    deleter,
+    ctx,
+    charge_accumulation_factory,
+    charge_totals_factory,
+):
+    deleter.delete.return_value = DeleteOutcome()
+    deleter.statement_agreements = frozenset(("AGR-7",))
+    mocker.patch.object(pipeline, "ChargeStreamer")
+    accumulate = mocker.AsyncMock(
+        return_value=charge_totals_factory(
+            charge_accumulation_factory("SUB-7", agreement_id="AGR-7"),
+            charge_accumulation_factory("SUB-2", agreement_id="AGR-2"),
+        )
+    )
+    mocker.patch.object(pipeline, "ChargeAccumulator").return_value.accumulate = accumulate
+    persister = mocker.patch.object(pipeline, "AccumulationPersister").return_value
+    persister.persist = mocker.AsyncMock()
+    mocker.patch.object(pipeline, "EstimatesUploader").return_value.update = mocker.AsyncMock(
+        return_value=mocker.Mock(has_failures=False)
+    )
+
+    await usage.recalculate(AgreementSelector("AGR-7"), {})  # act
+
+    persisted, agreement_ids = persister.persist.call_args.args
+    assert [bucket.agreement_id for bucket in persisted] == ["AGR-7"]
+    assert agreement_ids == frozenset(("AGR-7",))
+    selector.select.assert_awaited_once_with(ctx.window, ("PRD-1",), "", ("AGR-7",))
+
+
 async def test_recalculate_restores_previous_subscription_filter_on_refill_failure(
     mocker, stub_database, usage, ctx, selector, deleter
 ):
