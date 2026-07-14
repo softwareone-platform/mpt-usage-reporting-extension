@@ -3,9 +3,9 @@ from typing import Annotated
 
 import typer
 
-from mpt_usage_reporting_extension.persistence.sqlite.database import (
-    SqliteDatabase,
-    resolve_db_path,
+from mpt_usage_reporting_extension.persistence.postgres.database import (
+    PostgresDatabase,
+    resolve_database_url,
 )
 from mpt_usage_reporting_extension.services.execution_status import StatusReport
 
@@ -24,6 +24,6 @@ def status(
 
 async def _status(limit: int) -> None:
     """Open the store, collect the most recent executions, and render the status table."""
-    async with SqliteDatabase(resolve_db_path()) as db:
+    async with PostgresDatabase(resolve_database_url()) as db:
         executions = [execution async for execution in db.execution_repository().recent(limit)]
     StatusReport(executions).render()

@@ -1,124 +1,11 @@
 import datetime as dt
-import sqlite3
 from decimal import Decimal
-from types import MappingProxyType
 
-import pytest
-
-from mpt_usage_reporting_extension.persistence.models import (
-    Charge,
-    SubscriptionMonthlyAccumulation,
-)
-from mpt_usage_reporting_extension.persistence.sqlite import repositories
+from mpt_usage_reporting_extension.persistence.models import SubscriptionMonthlyAccumulation
+from mpt_usage_reporting_extension.persistence.postgres.repositories import engine
 from mpt_usage_reporting_extension.services.estimates_uploader import (
     _EstimateCalculator,  # noqa: PLC2701
 )
-
-
-@pytest.fixture
-def year():
-    return 2026
-
-
-@pytest.fixture
-def prev_year():
-    return 2025
-
-
-@pytest.fixture
-def month():
-    return 5
-
-
-@pytest.fixture
-def other_month():
-    return 6
-
-
-@pytest.fixture
-def last_month():
-    return 12
-
-
-@pytest.fixture
-def first_month():
-    return 1
-
-
-@pytest.fixture
-def bad_month():
-    return 13
-
-
-@pytest.fixture
-def bad_year():
-    return 99
-
-
-@pytest.fixture
-def subscription_id():
-    return "SUB-1234-5678"
-
-
-@pytest.fixture
-def agreement_id():
-    return "AGR-1234-5678"
-
-
-@pytest.fixture
-def decimal_zero():
-    return Decimal(0)
-
-
-@pytest.fixture
-def decimal_ppx1():
-    return Decimal("1543.13")
-
-
-@pytest.fixture
-def decimal_spx1():
-    return Decimal("1697.45")
-
-
-@pytest.fixture
-def decimal_first():
-    return Decimal("0.1")
-
-
-@pytest.fixture
-def decimal_second():
-    return Decimal("0.2")
-
-
-@pytest.fixture
-def decimal_total():
-    return Decimal("0.3")
-
-
-@pytest.fixture
-def sub_key(subscription_id, year, month):
-    return MappingProxyType({
-        "subscription_id": subscription_id,
-        "year": year,
-        "month": month,
-    })
-
-
-@pytest.fixture
-def charge_factory(subscription_id, agreement_id, year, month):
-    def factory(ppx1, spx1, **overrides):
-        fields: dict[str, object] = {
-            "subscription_id": subscription_id,
-            "agreement_id": agreement_id,
-            "year": year,
-            "month": month,
-            "ppx1": ppx1,
-            "spx1": spx1,
-        }
-        fields.update(overrides)
-        return Charge(**fields)  # type: ignore[arg-type]
-
-    return factory
 
 
 async def test_accumulate_inserts_new_row(
@@ -135,7 +22,7 @@ async def test_accumulate_inserts_new_row(
 
 async def test_accumulate_is_additive_without_drift(subscription_repo, charge_factory, sub_key):
     # Sums that float gets wrong: 0.1 + 0.2 == 0.30000000000000004 and
-    # 0.7 + 0.1 == 0.7999999999999999 in float; decimal_add keeps them exact.
+    # 0.7 + 0.1 == 0.7999999999999999 in float; NUMERIC keeps them exact.
     await subscription_repo.accumulate(charge_factory(Decimal("0.1"), Decimal("0.7")))
     await subscription_repo.accumulate(charge_factory(Decimal("0.2"), Decimal("0.1")))
 
@@ -143,26 +30,6 @@ async def test_accumulate_is_additive_without_drift(subscription_repo, charge_fa
 
     assert result.ppx1 == Decimal("0.3")
     assert result.spx1 == Decimal("0.8")
-
-
-async def test_accumulate_retries_when_database_is_busy(
-    mocker, subscription_repo, charge_factory, decimal_ppx1, decimal_spx1
-):
-    mocker.patch(
-        "mpt_usage_reporting_extension.persistence.sqlite.retry.asyncio.sleep",
-        autospec=True,
-    )
-    mock_execute = mocker.patch.object(
-        subscription_repo.engine.connection,
-        "execute",
-        mocker.AsyncMock(
-            side_effect=[sqlite3.OperationalError("database is locked"), mocker.AsyncMock()],
-        ),
-    )
-
-    await subscription_repo.accumulate(charge_factory(decimal_ppx1, decimal_spx1))  # act
-
-    assert mock_execute.await_count == 2
 
 
 async def test_columns_accumulate_independently(
@@ -195,15 +62,15 @@ async def test_updated_at_set_on_insert(subscription_repo, charge_factory, decim
 async def test_updated_at_refreshed_on_second_write(
     subscription_repo, mocker, charge_factory, decimal_first, sub_key
 ):
-    first_write = "2026-05-07T08:05:00Z"
-    second_write = "2026-05-08T09:06:00Z"
-    mocker.patch.object(repositories, "utc_now_iso", side_effect=[first_write, second_write])
+    first_write = dt.datetime.fromisoformat("2026-05-07T08:05:00Z")
+    second_write = dt.datetime.fromisoformat("2026-05-08T09:06:00Z")
+    mocker.patch.object(engine, "utc_now", side_effect=[first_write, second_write])
     await subscription_repo.accumulate(charge_factory(decimal_first, decimal_first))
     await subscription_repo.accumulate(charge_factory(decimal_first, decimal_first))
 
     result = await subscription_repo.get(**sub_key)
 
-    assert result.updated_at == dt.datetime.fromisoformat(second_write)
+    assert result.updated_at == second_write
 
 
 async def test_key_distinguishes_month(
@@ -228,28 +95,6 @@ async def test_key_distinguishes_month(
     assert (
         await subscription_repo.get(subscription_id=subscription_id, year=year, month=other_month)
     ).ppx1 == decimal_second
-
-
-async def test_invalid_month_is_rejected(agreement_repo, charge_factory, decimal_first, bad_month):
-    with pytest.raises(sqlite3.IntegrityError):
-        await agreement_repo.accumulate(
-            charge_factory(decimal_first, decimal_first, agreement_id="AGR-1", month=bad_month)
-        )  # act
-
-
-async def test_invalid_year_is_rejected(agreement_repo, charge_factory, decimal_first, bad_year):
-    with pytest.raises(sqlite3.IntegrityError):
-        await agreement_repo.accumulate(
-            charge_factory(decimal_first, decimal_first, agreement_id="AGR-1", year=bad_year)
-        )  # act
-
-
-def test_utc_now_iso_is_z_suffixed_utc():
-    result = repositories.utc_now_iso()
-
-    assert result.endswith("Z")
-    parsed = dt.datetime.fromisoformat(result)
-    assert parsed.utcoffset() == dt.timedelta(0)
 
 
 async def test_monthly_estimate_sums_the_month(
@@ -402,7 +247,8 @@ async def test_yearly_estimate_sums_pp_and_sp(
 async def test_updated_returns_subscription_buckets(
     subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
 ):
-    mocker.patch.object(repositories, "utc_now_iso", return_value="2026-05-07T08:05:00Z")
+    write_time = dt.datetime.fromisoformat("2026-05-07T08:05:00Z")
+    mocker.patch.object(engine, "utc_now", return_value=write_time)
     charge = charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1")
     await subscription_repo.accumulate(charge)
 
@@ -416,7 +262,7 @@ async def test_updated_returns_subscription_buckets(
             month=charge.month,
             ppx1=charge.ppx1,
             spx1=charge.spx1,
-            updated_at=dt.datetime.fromisoformat("2026-05-07T08:05:00Z"),
+            updated_at=write_time,
         )
     ]
 
@@ -424,7 +270,8 @@ async def test_updated_returns_subscription_buckets(
 async def test_updated_excludes_other_dates(
     subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
 ):
-    mocker.patch.object(repositories, "utc_now_iso", return_value="2026-05-07T08:05:00Z")
+    write_time = dt.datetime.fromisoformat("2026-05-07T08:05:00Z")
+    mocker.patch.object(engine, "utc_now", return_value=write_time)
     await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
 
     result = [stored async for stored in subscription_repo.updated(dt.date(2026, 5, 8))]  # act
@@ -432,8 +279,32 @@ async def test_updated_excludes_other_dates(
     assert result == []
 
 
+async def test_updated_includes_last_second_of_utc_day(
+    subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
+):
+    write_time = dt.datetime.fromisoformat("2026-05-07T23:59:59Z")
+    mocker.patch.object(engine, "utc_now", return_value=write_time)
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+
+    result = [stored async for stored in subscription_repo.updated(dt.date(2026, 5, 7))]  # act
+
+    assert len(result) == 1
+
+
+async def test_updated_excludes_next_utc_midnight(
+    subscription_repo, mocker, charge_factory, decimal_first, decimal_zero
+):
+    write_time = dt.datetime.fromisoformat("2026-05-08T00:00:00Z")
+    mocker.patch.object(engine, "utc_now", return_value=write_time)
+    await subscription_repo.accumulate(charge_factory(decimal_first, decimal_zero))
+
+    result = [stored async for stored in subscription_repo.updated(dt.date(2026, 5, 7))]  # act
+
+    assert result == []
+
+
 async def test_subscriptions_by_agreement_one_per_id(
-    subscription_repo, charge_factory, decimal_first, decimal_zero, other_month
+    subscription_repo, charge_factory, decimal_first, decimal_zero
 ):
     await subscription_repo.accumulate(
         charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", agreement_id="AGR-1")
@@ -444,7 +315,7 @@ async def test_subscriptions_by_agreement_one_per_id(
 
     result = [sub async for sub in subscription_repo.subscriptions_by_agreement()]  # act
 
-    assert sorted(result) == ["SUB-1", "SUB-2"]
+    assert result == ["SUB-1", "SUB-2"]
 
 
 async def test_subscriptions_by_agreement_dedupes(
@@ -484,7 +355,7 @@ async def test_subscriptions_by_agreement_empty(subscription_repo):
 
 
 async def test_agreements_by_subscription_distinct(
-    subscription_repo, charge_factory, decimal_first, decimal_zero, month, other_month
+    subscription_repo, charge_factory, decimal_first, decimal_zero, other_month
 ):
     await subscription_repo.accumulate(
         charge_factory(decimal_first, decimal_zero, subscription_id="SUB-1", agreement_id="AGR-1")
@@ -623,43 +494,3 @@ async def test_delete_no_match(subscription_repo):
     result = await subscription_repo.delete(subscription_id="SUB-MISSING")
 
     assert result == 0
-
-
-async def test_delete_agreement_repo(
-    agreement_repo,
-    charge_factory,
-    decimal_first,
-    decimal_zero,
-    other_month,
-):
-    await agreement_repo.accumulate(
-        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1")
-    )
-    await agreement_repo.accumulate(
-        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1", month=other_month)
-    )
-    await agreement_repo.accumulate(
-        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-2")
-    )
-
-    result = await agreement_repo.delete(agreement_id="AGR-1")
-
-    assert result == 2
-
-
-async def test_delete_agreement_repo_all(
-    agreement_repo,
-    charge_factory,
-    decimal_first,
-    decimal_zero,
-):
-    await agreement_repo.accumulate(
-        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1")
-    )
-    await agreement_repo.accumulate(
-        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-2")
-    )
-
-    result = await agreement_repo.delete()
-
-    assert result == 2

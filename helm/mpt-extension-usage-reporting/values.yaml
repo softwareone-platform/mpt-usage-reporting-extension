@@ -1,6 +1,5 @@
 # Parent chart values for mpt-extension-usage-reporting.
-# `global` is shared with the api and worker subcharts; the top-level label keys
-# are used by the parent-level PersistentVolumeClaim.
+# `global` is shared with the api and worker subcharts.
 
 owner: sirius
 type: product
@@ -23,8 +22,9 @@ global:
   MpApiToken: ZGVmYXVsdA==
   # MPT_PRODUCTS_IDS: comma-separated Marketplace product ids the API/events process binds to.
   MpProductsIds: default
-  # MPT_BSU_DB_PATH: SQLite database path. Should live under persistence.mountPath.
-  MptBsuDbPath: /data/bsu.db
+  # MPT_DATABASE_URL: PostgreSQL connection string, base64-encoded. Required at
+  # runtime by every command that touches the store and by the schema migrations.
+  MptDatabaseUrl: ZGVmYXVsdA==
   MpToolStorageType: local
   SdkExtensionId: EXT-2415-5207
   SdkExtensionUrl: https://EXT-2415-5207.ext.s1.show
@@ -32,24 +32,6 @@ global:
   SdkOtelServiceName: Swo.Extension.UsageReporting
   SdkObservabilityEnabled: "false"
   SdkApplicationInsightsConnectionString: ZGVmYXVsdA==
-
-  # Shared persistent storage mounted at /data for the SQLite database. It is
-  # mounted by the api deployment, the worker deployment, and the worker CronJob,
-  # so the access mode must allow multi-pod access (ReadWriteMany) unless all pods
-  # are co-scheduled on one node.
-  persistence:
-    enabled: true
-    claimName: mpt-extension-usage-reporting-data
-    mountPath: /data
-    size: 1Gi
-    accessMode: ReadWriteMany
-    # StorageClass for the PVC. Empty uses the cluster default. Must support the
-    # access mode above (ReadWriteMany requires an RWX-capable storage class).
-    storageClass: ""
-    # Use an existing PVC instead of creating one. When set, no PVC is created.
-    # Provisioned by Terraform in ops-platform-infra (module "mpt_usage_reporting_pv")
-    # so the volume + data survive helm uninstall/reinstall. Must equal the TF pvc_name.
-    existingClaim: mpt-extension-usage-reporting-data
 
   # CronJobs keyed by name (rendered by the worker subchart) as
   # "{worker-fullname}-cronjob-{name}" running {command} on {schedule}.

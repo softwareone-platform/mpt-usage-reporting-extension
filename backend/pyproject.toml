@@ -6,10 +6,10 @@ authors = [{ name = "SoftwareOne AG" }]
 requires-python = ">=3.12,<4"
 license = { text = "Apache-2.0 license" }
 dependencies = [
-    "aiosqlite>=0.22.1",
     "mpt-api-client==6.3.*",
     "mpt-extension-sdk[azure-monitor]==6.4.*",
     "mpt-tool==6.0.*",
+    "psycopg[binary]==3.2.*",
     "rich==15.0.*",
     "typer==0.26.*",
 ]
@@ -86,7 +86,8 @@ show-source = true
 statistics = false
 per-file-ignores = [
   # The leading `*` makes this match both CI (`migrations/...`) and pre-commit (`backend/migrations/...`) paths.
-  "*migrations/**:WPS102",
+  # WPS118: the 15-character timestamp prefix makes descriptive migration module names exceed the limit.
+  "*migrations/**:WPS102,WPS118",
   # Tests favour long descriptive names (WPS118), repeated fixture literals (WPS204), and local
   # helper functions (WPS430), none of which are smells in test code.
   "*tests/**:WPS202,WPS432,WPS211,WPS118,WPS204,WPS430",

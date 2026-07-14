@@ -13,12 +13,12 @@ from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
 from mpt_usage_reporting_extension.exceptions import UpstreamSubscriptionError
 from mpt_usage_reporting_extension.mpt_client import build_service
+from mpt_usage_reporting_extension.persistence.postgres.database import (
+    PostgresDatabase,
+    resolve_database_url,
+)
 from mpt_usage_reporting_extension.persistence.protocols import (
     SubscriptionAccumulationRepository,
-)
-from mpt_usage_reporting_extension.persistence.sqlite.database import (
-    SqliteDatabase,
-    resolve_db_path,
 )
 from mpt_usage_reporting_extension.selectors import (
     AgreementSelector,
@@ -139,7 +139,7 @@ def push_estimates_by_id(
 async def _push_estimates_by_id(api_service: MPTAPIService, selector: Selector) -> None:
     """Resolve the selector's subscription ids and upload their estimates."""
     anchor = last_month(dt.datetime.now(tz=dt.UTC).date())
-    async with SqliteDatabase(resolve_db_path()) as db:
+    async with PostgresDatabase(resolve_database_url()) as db:
         repo = db.subscription_repository()
         subscription_ids = resolve_targets(
             selector, repo, api_service.client.commerce.subscriptions

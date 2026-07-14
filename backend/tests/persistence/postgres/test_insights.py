@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 
 import pytest
@@ -16,10 +17,11 @@ def statements(db):
 
 
 async def _fetch_one(db, table, row_id):
-    async with db.connection.execute(
-        f"SELECT * FROM {table} WHERE id = :id",  # noqa: S608
-        {"id": row_id},
-    ) as cursor:
+    async with db.connection.cursor() as cursor:
+        await cursor.execute(
+            f"SELECT * FROM {table} WHERE id = %(id)s",  # noqa: S608
+            {"id": row_id},
+        )
         return await cursor.fetchone()
 
 
@@ -59,8 +61,20 @@ async def test_recent_returns_newest_first(db, executions):
     assert result[1].status == ExecutionStatus.FAILED
 
 
-async def test_statement_start_inserts_processing_row(db, statements):
-    execution_id = 42
+async def test_recent_formats_timestamps_as_iso_z_strings(db, executions):
+    execution_id = await executions.start(Command.RUN, {})
+    await executions.finish(execution_id, ExecutionStatus.SUCCESS, {})
+
+    result = [record async for record in executions.recent(1)]
+
+    record = result[0]
+    assert record.started_at.endswith("Z")
+    assert record.completed_at.endswith("Z")
+    assert dt.datetime.fromisoformat(record.started_at).utcoffset() == dt.timedelta(0)
+
+
+async def test_statement_start_inserts_processing_row(db, statements, executions):
+    execution_id = await executions.start(Command.RUN, {})
 
     result = await statements.start(execution_id, "BILL-1")
 
@@ -72,8 +86,9 @@ async def test_statement_start_inserts_processing_row(db, statements):
     assert (row["ended_at"], row["failure_message"]) == (None, None)
 
 
-async def test_statement_finish_records_success(db, statements):
-    processing_id = await statements.start(1, "BILL-1")
+async def test_statement_finish_records_success(db, statements, executions):
+    execution_id = await executions.start(Command.RUN, {})
+    processing_id = await statements.start(execution_id, "BILL-1")
 
     await statements.finish(processing_id, StatementStatus.SUCCESS)  # act
 
@@ -83,8 +98,9 @@ async def test_statement_finish_records_success(db, statements):
     assert row["failure_message"] is None
 
 
-async def test_statement_finish_records_failure_message(db, statements):
-    processing_id = await statements.start(1, "BILL-1")
+async def test_statement_finish_records_failure_message(db, statements, executions):
+    execution_id = await executions.start(Command.RUN, {})
+    processing_id = await statements.start(execution_id, "BILL-1")
 
     await statements.finish(processing_id, StatementStatus.FAILURE, "boom")  # act
 

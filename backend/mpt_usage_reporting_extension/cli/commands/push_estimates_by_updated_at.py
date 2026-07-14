@@ -8,12 +8,12 @@ from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 
 from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
 from mpt_usage_reporting_extension.mpt_client import build_service
+from mpt_usage_reporting_extension.persistence.postgres.database import (
+    PostgresDatabase,
+    resolve_database_url,
+)
 from mpt_usage_reporting_extension.persistence.protocols import (
     SubscriptionAccumulationRepository,
-)
-from mpt_usage_reporting_extension.persistence.sqlite.database import (
-    SqliteDatabase,
-    resolve_db_path,
 )
 from mpt_usage_reporting_extension.services.estimates_uploader import EstimatesUploader
 from mpt_usage_reporting_extension.types import Month
@@ -39,7 +39,7 @@ def push_estimates_by_updated_at(
 async def _push_estimates_by_updated_at(api_service: MPTAPIService, updated_at: dt.date) -> None:
     """Upload estimates for every subscription whose stored rows were last written on updated_at."""
     anchor = last_month(dt.datetime.now(tz=dt.UTC).date())
-    async with SqliteDatabase(resolve_db_path()) as db:
+    async with PostgresDatabase(resolve_database_url()) as db:
         repo = db.subscription_repository()
         subscription_ids = _updated_subscription_ids(repo, updated_at)
         report = await EstimatesUploader(repo, api_service.subscriptions).update(

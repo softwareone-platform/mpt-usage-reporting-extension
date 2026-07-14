@@ -17,6 +17,7 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `EXT_WEBHOOKS_SECRETS` | - | `{"PRD-1111-1111": "123qweasd3432234"}` | Webhook secret keyed by Marketplace product id |
 | `MPT_API_BASE_URL` | `http://localhost:8000` | `https://api.platform.softwareone.com` | SoftwareOne Marketplace API URL |
 | `MPT_API_TOKEN` | - | `eyJhbGciOiJSUzI1N...` | SoftwareOne Marketplace API token |
+| `MPT_DATABASE_URL` | - | `postgresql://postgres:postgres@postgres:5432/usage_reporting` | PostgreSQL connection string; required at runtime by every command that touches the store and by the schema migrations (both fail fast without it) |
 | `SDK_EXTENSION_API_KEY` | - | `<extension-api-key>` | Extension API key used by the SDK to authenticate |
 | `SDK_EXTENSION_ID` | - | `EXT-1111-1111` | Extension id |
 | `SDK_EXTENSION_URL` | `http://devmock:8000` | `http://devmock:8000` | Extension service URL (devmock locally) |
@@ -28,7 +29,6 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `MPT_TOOL_STORAGE_AIRTABLE_BASE_ID` | - | `appXXXXXXXXXXXXXX` | Airtable base id when Airtable storage is enabled |
 | `MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME` | - | `MigrationTracking` | Airtable table name when Airtable storage is enabled |
 | `MPT_ORDERS_API_POLLING_INTERVAL_SECS` | `120` | `60` | Order polling interval in seconds |
-| `MPT_BSU_DB_PATH` | - | `/data/bsu.db` | Override path for the usage-accumulation SQLite database (default: `storage.db` in the backend root) |
 
 ## AppInsights Settings
 
@@ -47,6 +47,7 @@ Example `.env` snippet:
 EXT_WEBHOOKS_SECRETS={"PRD-1111-1111": "<webhook-secret-for-product>", "PRD-2222-2222": "<webhook-secret-for-product>"}
 MPT_API_BASE_URL=https://api.s1.show
 MPT_API_TOKEN=c0fdafd7-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+MPT_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/usage_reporting
 SDK_EXTENSION_API_KEY=<extension-api-key>
 SDK_EXTENSION_ID=EXT-1111-1111
 SDK_EXTENSION_URL=http://devmock:8000

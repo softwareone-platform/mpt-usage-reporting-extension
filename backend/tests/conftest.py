@@ -1,17 +1,23 @@
 import datetime as dt
+import os
+import uuid
 from decimal import Decimal
 
 import pytest
 from mpt_api_client.models.model import BaseModel
 from mpt_api_client.resources.billing.statement_charges import StatementCharge
 from mpt_api_client.resources.billing.statements import Statement
+from psycopg import AsyncConnection, conninfo
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, ChargeTotals
+from mpt_usage_reporting_extension.persistence.postgres.database import PostgresDatabase
 from mpt_usage_reporting_extension.window import RunWindow
+
+_DEFAULT_TEST_DATABASE_URL = "postgresql://postgres:postgres@postgres:5432/usage_reporting"
 
 
 @pytest.fixture
-def schema():
+def pg_schema():
     return (
         """
         CREATE TABLE subscription_monthly_accumulation (
@@ -19,10 +25,10 @@ def schema():
             agreement_id TEXT NOT NULL,
             year INTEGER NOT NULL CHECK (year BETWEEN 1000 AND 9999),
             month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
-            ppx1 DECIMAL NOT NULL DEFAULT '0',
-            spx1 DECIMAL NOT NULL DEFAULT '0',
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY (subscription_id, agreement_id, year, month)
+            ppx1 NUMERIC NOT NULL DEFAULT 0,
+            spx1 NUMERIC NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (subscription_id, year, month, agreement_id)
         )
         """,
         """
@@ -30,35 +36,68 @@ def schema():
             agreement_id TEXT NOT NULL,
             year INTEGER NOT NULL CHECK (year BETWEEN 1000 AND 9999),
             month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
-            ppx1 DECIMAL NOT NULL DEFAULT '0',
-            spx1 DECIMAL NOT NULL DEFAULT '0',
-            updated_at TEXT NOT NULL,
+            ppx1 NUMERIC NOT NULL DEFAULT 0,
+            spx1 NUMERIC NOT NULL DEFAULT 0,
+            updated_at TIMESTAMPTZ NOT NULL,
             PRIMARY KEY (agreement_id, year, month)
         )
         """,
         """
         CREATE TABLE command_execution (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
             command TEXT NOT NULL,
             parameters TEXT NOT NULL,
             status TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            completed_at TEXT,
+            started_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ,
             result TEXT
         )
         """,
         """
         CREATE TABLE statement_processing (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            execution_id INTEGER NOT NULL REFERENCES command_execution(id),
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            execution_id BIGINT NOT NULL REFERENCES command_execution(id),
             statement_id TEXT NOT NULL,
-            started_at TEXT NOT NULL,
-            ended_at TEXT,
+            started_at TIMESTAMPTZ NOT NULL,
+            ended_at TIMESTAMPTZ,
             status TEXT NOT NULL,
             failure_message TEXT
         )
         """,
+        """
+        CREATE INDEX idx_statement_processing_execution
+        ON statement_processing (execution_id)
+        """,
     )
+
+
+@pytest.fixture
+def pg_admin_dsn():
+    return os.environ.get("MPT_TEST_DATABASE_URL", _DEFAULT_TEST_DATABASE_URL)
+
+
+def _random_db_name():
+    suffix = uuid.uuid4().hex[:8]
+    return f"test_{suffix}"
+
+
+async def _admin_execute(dsn, statement):
+    async with await AsyncConnection.connect(dsn, autocommit=True) as admin:
+        await admin.execute(statement)
+
+
+@pytest.fixture
+async def db(pg_admin_dsn, pg_schema):
+    db_name = _random_db_name()
+    await _admin_execute(pg_admin_dsn, f'CREATE DATABASE "{db_name}"')
+    test_dsn = conninfo.make_conninfo(pg_admin_dsn, dbname=db_name)
+    try:  # noqa: WPS501  # drop the database even when schema setup or the test fails
+        async with PostgresDatabase(test_dsn) as database:
+            for statement in pg_schema:
+                await database.connection.execute(statement)  # noqa: WPS476
+            yield database
+    finally:
+        await _admin_execute(pg_admin_dsn, f'DROP DATABASE "{db_name}" WITH (FORCE)')
 
 
 @pytest.fixture
