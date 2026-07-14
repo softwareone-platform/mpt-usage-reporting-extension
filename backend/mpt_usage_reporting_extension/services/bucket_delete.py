@@ -96,6 +96,10 @@ class BucketDeleter:  # noqa: WPS214
     subscription of each matched agreement). The subscription scope deletes only the subscription
     bucket, since the shared agreement bucket aggregates its sibling subscriptions. A ``None`` scope
     deletes every bucket in both tables.
+
+    The selector's agreement ids are always registered as statement re-selection targets — even
+    when no stored rows were deleted — so a recalculate can rebuild (bootstrap) buckets that do not
+    exist yet. ``DeleteOutcome`` still reports only what was actually deleted.
     """
 
     def __init__(
@@ -114,7 +118,10 @@ class BucketDeleter:  # noqa: WPS214
 
     @property
     def statement_agreements(self) -> frozenset[str]:
-        """Return agreement ids whose statements should be re-selected."""
+        """Return the selector scope's agreement ids whose statements should be re-selected.
+
+        Registered even when the delete removed no rows, so an empty scope can be rebuilt.
+        """
         return self._statement_agreements
 
     async def delete(self, scope: Selector | None) -> DeleteOutcome:
@@ -145,9 +152,7 @@ class BucketDeleter:  # noqa: WPS214
         outcome = await DeleteOutcome.from_subscriptions(
             self._delete_subscription_ids(self._subscription_repo.subscriptions_by_agreement())
         )
-        agreement_deleted = await self._agreement_repo.delete()
-        if not outcome.subscriptions and agreement_deleted == 0:
-            return DeleteOutcome()
+        await self._agreement_repo.delete()
         return outcome
 
     async def _delete_subscription(self, subscription_id: str) -> DeleteOutcome:
@@ -157,16 +162,17 @@ class BucketDeleter:  # noqa: WPS214
                 subscription_id
             )
         ]
+        self._statement_agreements = frozenset(agreements)
         if self._dry_run:
             deleted = int(await self._has_subscription(subscription_id))
         else:
             deleted = await self._subscription_repo.delete(subscription_id=subscription_id)
         if deleted == 0:
             return DeleteOutcome()
-        self._statement_agreements = frozenset(agreements)
         return DeleteOutcome(subscriptions=[subscription_id])
 
     async def _delete_agreement(self, agreement_id: str) -> DeleteOutcome:
+        self._statement_agreements |= frozenset((agreement_id,))
         outcome = await DeleteOutcome.from_subscriptions(
             self._delete_subscription_ids(
                 self._subscription_repo.subscriptions_by_agreement(agreement_id)
@@ -176,9 +182,6 @@ class BucketDeleter:  # noqa: WPS214
             agreement_deleted = 0
         else:
             agreement_deleted = await self._agreement_repo.delete(agreement_id=agreement_id)
-        if not outcome.subscriptions and agreement_deleted == 0:
-            return DeleteOutcome()
-        self._statement_agreements |= frozenset((agreement_id,))
         agreements = [agreement_id] if agreement_deleted > 0 else []
         return DeleteOutcome(subscriptions=outcome.subscriptions, agreements=agreements)
 

@@ -19,7 +19,7 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 )
 from mpt_usage_reporting_extension.selectors import ProductSelector, Selector, SubscriptionSelector
 from mpt_usage_reporting_extension.services.accumulation_cleanup import AccumulationCleaner
-from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter, DeleteOutcome
+from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter
 from mpt_usage_reporting_extension.services.charge_persistence import AccumulationPersister
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
@@ -43,9 +43,9 @@ from mpt_usage_reporting_extension.utils import last_month
 
 @dataclass(frozen=True)
 class ResetScope:
-    """The buckets a recalculate reset removed and must rebuild."""
+    """The selector-defined scope a recalculate deletes and rebuilds."""
 
-    outcome: DeleteOutcome
+    subscriptions: frozenset[str]
     statement_agreements: frozenset[str]
     agreement_ids: frozenset[str]
 
@@ -69,13 +69,15 @@ class UsageReportingPipeline:  # noqa: WPS214
     async def recalculate(
         self, scope: Selector | None, parameters: Mapping[str, object], *, dry_run: bool = False
     ) -> None:
-        """Delete the scope's buckets, then re-accumulate exactly what was reset.
+        """Delete the scope's buckets, then re-accumulate the selector's scope.
 
         Unlike ``run`` (additive), the scope's buckets are deleted first, so re-runs do not
-        double-count. The re-fill is confined to the buckets the delete removed: it selects the
-        reset agreements' statements (no date window), drops accumulations outside the reset scope,
-        and skips the agreement table for a subscription scope whose agreement bucket was left
-        intact. Retention pruning still runs afterwards.
+        double-count. The rebuild scope is defined by the selector — the agreements it resolves (or
+        the given agreement/subscription id) — not by what the delete removed, so a recalculate
+        also bootstraps buckets with no stored rows (e.g. an empty database). It selects the scope
+        agreements' statements (no date window), drops accumulations outside the scope, and skips
+        the agreement table for a subscription scope whose shared agreement bucket is left intact.
+        Retention pruning still runs afterwards.
         When ``dry_run`` is enabled, every read/compute stage still runs, but all DB delete/upsert/
         prune actions and subscription estimate updates are replaced by no-ops.
         """
@@ -86,7 +88,7 @@ class UsageReportingPipeline:  # noqa: WPS214
             tracker = ExecutionTracker(db.execution_repository())
             async with tracker.track(Command.RECALCULATE, parameters) as execution:
                 reset_scope = await self._reset(scope, db, dry_run=dry_run)
-                with self._scoped_charge_filter(reset_scope.outcome.subscriptions):
+                with self._scoped_charge_filter(reset_scope.subscriptions):
                     await self._refill(reset_scope, db, execution, dry_run=dry_run)
                 failed = execution.has_errors
             if failed:
@@ -136,13 +138,11 @@ class UsageReportingPipeline:  # noqa: WPS214
         *,
         dry_run: bool,
     ) -> None:
-        """Re-accumulate only the buckets the reset removed, then prune old rows."""
+        """Re-accumulate the selector-defined reset scope's buckets, then prune old rows."""
         recorder = StatementProcessingRecorder(db.statement_processing_repository(), execution.id)
         statements = await self._select_statements(tuple(sorted(reset_scope.statement_agreements)))
         accumulations = await self._accumulate_charges(statements, recorder)
-        kept = self._filter_to_reset(
-            accumulations, reset_scope.outcome, reset_scope.statement_agreements
-        )
+        kept = self._filter_to_reset(accumulations, reset_scope)
         await self._persist(
             kept,
             db.subscription_repository(),
@@ -176,7 +176,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         *,
         dry_run: bool,
     ) -> ResetScope:
-        """Delete the scope's stored buckets and report the reset scope to rebuild.
+        """Delete the scope's stored buckets and report the selector-defined scope to rebuild.
 
         A ``None`` scope is expanded to the run's configured products, so the reset matches the
         re-fill's product scope instead of wiping buckets of unrelated products; the per-product
@@ -192,40 +192,39 @@ class UsageReportingPipeline:  # noqa: WPS214
         if scope is not None:
             reset = await deleter.delete(scope)
             statement_agreements = deleter.statement_agreements
-            agreement_ids = (
-                frozenset() if isinstance(scope, SubscriptionSelector) else statement_agreements
+            if isinstance(scope, SubscriptionSelector):
+                return ResetScope(
+                    subscriptions=frozenset((scope.subscription_id,)),
+                    statement_agreements=statement_agreements,
+                    agreement_ids=frozenset(),
+                )
+            return ResetScope(
+                subscriptions=frozenset(reset.subscriptions),
+                statement_agreements=statement_agreements,
+                agreement_ids=statement_agreements,
             )
-            return ResetScope(reset, statement_agreements, agreement_ids)
         return await self._reset_products(deleter)
 
-    async def _reset_products(  # noqa: WPS210  # accumulates four per-product reset lists
-        self, deleter: BucketDeleter
-    ) -> ResetScope:
+    async def _reset_products(self, deleter: BucketDeleter) -> ResetScope:
         """Delete each configured product's buckets and union their reset scopes."""
-        subscriptions: list[str] = []
-        agreements: list[str] = []
+        subscriptions: set[str] = set()
         statement_agreements: set[str] = set()
         for product_id in self._ctx.product_ids:
             outcome = await deleter.delete(ProductSelector(product_id))  # noqa: WPS476
-            subscriptions.extend(outcome.subscriptions)
-            agreements.extend(outcome.agreements)
+            subscriptions |= set(outcome.subscriptions)
             statement_agreements |= deleter.statement_agreements
-        reset = DeleteOutcome(subscriptions=subscriptions, agreements=agreements)
         narrowed = frozenset(statement_agreements)
-        return ResetScope(reset, narrowed, narrowed)
+        return ResetScope(frozenset(subscriptions), narrowed, narrowed)
 
     def _filter_to_reset(
-        self,
-        accumulations: Iterable[ChargeAccumulation],
-        reset: DeleteOutcome,
-        statement_agreements: frozenset[str],
+        self, accumulations: Iterable[ChargeAccumulation], reset: ResetScope
     ) -> list[ChargeAccumulation]:
-        """Keep only the accumulations whose bucket the reset removed."""
+        """Keep only the accumulations inside the selector's reset scope."""
         return [
             accumulation
             for accumulation in accumulations
             if accumulation.subscription_id in reset.subscriptions
-            or accumulation.agreement_id in statement_agreements
+            or accumulation.agreement_id in reset.statement_agreements
         ]
 
     async def _select_statements(self, agreement_ids: tuple[str, ...] = ()) -> list[Statement]:
