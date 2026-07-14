@@ -1,0 +1,29 @@
+# This is a YAML-formatted file.
+# Declare variables to be passed into the worker subchart templates.
+
+cliVersion: 2.4.0
+owner: turing
+git:
+  repository: mpt-extension-usage-reporting
+image:
+  repository: /mpt-extension-usage-reporting
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+podSecurityContext: {}
+
+securityContext: {}
+
+accessPolicy: public
+accessPolicyAudience: any
+# Type of app: test, product, infra
+type: product
+applicationGroup: pyra-cli
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []

@@ -1,0 +1,58 @@
+{{- range $name, $config := .Values.global.cronjobs }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  namespace: {{ $.Release.Namespace }}
+  name: {{ printf "%s-cronjob-%s" (include "common.fullname" $ | trunc (int (sub 52 (add 9 (len $name)))) | trimSuffix "-") $name }}
+  labels:
+    {{- include "common.labels" $ | nindent 4 }}
+spec:
+  schedule: "{{ $config.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 3600
+  suspend: false
+  jobTemplate:
+    spec:
+      parallelism: 1
+      completions: 1
+      backoffLimit: 3
+      template:
+        metadata:
+          annotations:
+            sidecar.istio.io/inject: "false"
+          labels:
+            azure.workload.identity/use: "true"
+        spec:
+          serviceAccountName: mpt-extension-usage-reporting-sa
+          containers:
+            - name: {{ $name }}
+              securityContext:
+                {{- toYaml $.Values.securityContext | nindent 16 }}
+              image: "{{ $.Values.global.registryUrl }}{{ $.Values.image.repository }}:{{ $.Chart.AppVersion }}"
+              command:
+                {{- range (splitList " " $config.command) }}
+                - {{ . }}
+                {{- end }}
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              envFrom:
+                - configMapRef:
+                    name: {{ include "common.fullname" $ }}
+                - secretRef:
+                    name: {{ include "common.fullname" $ }}
+              {{- if $.Values.global.persistence.enabled }}
+              volumeMounts:
+                - name: data
+                  mountPath: {{ $.Values.global.persistence.mountPath }}
+              {{- end }}
+          {{- if $.Values.global.persistence.enabled }}
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: {{ $.Values.global.persistence.existingClaim | default $.Values.global.persistence.claimName }}
+          {{- end }}
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+---
+{{- end }}
