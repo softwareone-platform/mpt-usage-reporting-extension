@@ -26,7 +26,7 @@ def resolve_database_url() -> str:
 
 def connect_sync() -> psycopg.Connection:
     """Open a synchronous connection for schema migrations."""
-    return psycopg.connect(resolve_database_url())
+    return psycopg.connect(resolve_database_url(), connect_timeout=_CONNECT_TIMEOUT_SECONDS)
 
 
 class PostgresDatabase:  # noqa: WPS214
