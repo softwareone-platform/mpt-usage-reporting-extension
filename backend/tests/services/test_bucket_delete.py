@@ -258,6 +258,26 @@ async def test_delete_subscription_dry_run_skips_delete_calls(
     agreement_repo.delete.assert_not_called()
 
 
+async def test_delete_none_dry_run_skips_delete_calls(
+    subscription_repo, agreement_repo, subscriptions
+):
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
+        "SUB-1"
+    ])
+    deleter = BucketDeleter(
+        subscription_repo,
+        agreement_repo,
+        cast(Any, subscriptions),
+        dry_run=True,
+    )
+
+    result = await deleter.delete(None)
+
+    assert result == DeleteOutcome(subscriptions=["SUB-1"])
+    subscription_repo.delete.assert_not_called()
+    agreement_repo.delete.assert_not_called()
+
+
 async def test_delete_agreement_dry_run_uses_scope_without_writes(
     subscription_repo, agreement_repo, subscriptions
 ):
