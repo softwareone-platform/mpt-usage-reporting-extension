@@ -34,7 +34,10 @@ def test_connect_sync_uses_resolved_url(mocker, monkeypatch):
 
     result = database.connect_sync()
 
-    mock_connect.assert_called_once_with("postgresql://user:pass@host:5432/db")
+    mock_connect.assert_called_once_with(
+        "postgresql://user:pass@host:5432/db",
+        connect_timeout=10,
+    )
     assert result is mock_connect.return_value
 
 
