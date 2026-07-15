@@ -1,6 +1,7 @@
 import datetime as dt
 from collections.abc import AsyncIterator, Iterable
 from decimal import Decimal
+from uuid import uuid4
 
 from psycopg import AsyncConnection, AsyncServerCursor, sql
 from psycopg.rows import DictRow
@@ -73,7 +74,7 @@ class AccumulationEngine:  # noqa: WPS214  # one method per persistence operatio
             "WHERE updated_at >= %(day)s::timestamp AT TIME ZONE 'UTC' "
             "AND updated_at < (%(day)s::timestamp AT TIME ZONE 'UTC') + interval '1 day'"
         ).format(table=sql.Identifier(self.table))
-        async with self._stream_cursor("rows_updated_on") as cursor:
+        async with self._stream_cursor() as cursor:
             await cursor.execute(select_sql, {"day": day})
             async for row in cursor:
                 yield row
@@ -81,19 +82,18 @@ class AccumulationEngine:  # noqa: WPS214  # one method per persistence operatio
     async def distinct(self, column: str, **equals: object) -> AsyncIterator[object]:
         """Yield each distinct value of column, optionally filtered by equals."""
         select_sql = self._distinct_sql(column, equals)
-        async with self._stream_cursor("distinct") as cursor:
+        async with self._stream_cursor() as cursor:
             await cursor.execute(select_sql, equals)
             async for row in cursor:
                 yield row[column]
 
-    def _stream_cursor(self, operation: str) -> AsyncServerCursor[DictRow]:
+    def _stream_cursor(self) -> AsyncServerCursor[DictRow]:
         """Return a server-side cursor so iteration fetches rows incrementally.
 
         ``withhold`` keeps the cursor usable on the autocommit connection, and the
-        name is unique per table and operation so streams over different tables
-        can be open concurrently.
+        random name lets any number of streams be open concurrently.
         """
-        return self.connection.cursor(f"{self.table}_{operation}", withhold=True)
+        return self.connection.cursor(f"stream_{uuid4().hex}", withhold=True)
 
     def _upsert_params(
         self,

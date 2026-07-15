@@ -176,6 +176,23 @@ async def test_distinct_yields_ordered_deduplicated_values(
     assert result == ["SUB-1", "SUB-2"]
 
 
+async def test_overlapping_same_operation_streams_both_complete(
+    accumulation_engine, key_fields, decimal_first, decimal_zero
+):
+    other_subscription = {**key_fields, "subscription_id": "SUB-2"}
+    await accumulation_engine.accumulate(ppx1=decimal_first, spx1=decimal_zero, **key_fields)
+    await accumulation_engine.accumulate(
+        ppx1=decimal_first, spx1=decimal_zero, **other_subscription
+    )
+    first = accumulation_engine.distinct("subscription_id")
+    second = accumulation_engine.distinct("subscription_id")
+
+    result = [await anext(first), await anext(second)]  # act
+    result += [sub async for sub in first] + [sub async for sub in second]
+
+    assert result == ["SUB-1", "SUB-1", "SUB-2", "SUB-2"]
+
+
 async def test_distinct_filters_by_equals(
     accumulation_engine, key_fields, decimal_first, decimal_zero
 ):
