@@ -152,7 +152,8 @@ class BucketDeleter:  # noqa: WPS214
         outcome = await DeleteOutcome.from_subscriptions(
             self._delete_subscription_ids(self._subscription_repo.subscriptions_by_agreement())
         )
-        await self._agreement_repo.delete()
+        if not self._dry_run:
+            await self._agreement_repo.delete()
         return outcome
 
     async def _delete_subscription(self, subscription_id: str) -> DeleteOutcome:
