@@ -26,6 +26,20 @@ def last_month(today: dt.date) -> dt.date:
     return today.replace(day=1) - dt.timedelta(days=1)
 
 
+def format_duration(delta: dt.timedelta) -> str:
+    """Render a duration as ``1h 31min 16 seconds``, omitting leading zero units."""
+    hours, remainder = divmod(int(delta.total_seconds()), 3600)  # noqa: WPS432
+    minutes, seconds = divmod(remainder, 60)
+    parts: list[str] = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}min")
+    if seconds or not parts:
+        parts.append(f"{seconds} seconds")
+    return " ".join(parts)
+
+
 def month_ordinal(year: int, month: int) -> int:
     """Map a (year, month) pair to a single comparable month ordinal."""
     return year * 12 + month  # noqa: WPS432

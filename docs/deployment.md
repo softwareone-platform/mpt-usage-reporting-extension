@@ -29,6 +29,8 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `MPT_TOOL_STORAGE_AIRTABLE_BASE_ID` | - | `appXXXXXXXXXXXXXX` | Airtable base id when Airtable storage is enabled |
 | `MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME` | - | `MigrationTracking` | Airtable table name when Airtable storage is enabled |
 | `MPT_ORDERS_API_POLLING_INTERVAL_SECS` | `120` | `60` | Order polling interval in seconds |
+| `MPT_MSTEAMS_WEBHOOK_URL` | - | `https://prod-xx.westeurope.logic.azure.com/...` | MS Teams Workflows webhook URL for `run`/`recalculate` execution notifications; leave unset to disable them |
+| `MPT_TEAMS_NOTIFICATIONS_ENABLED` | `true` | `false` | Toggle Teams execution notifications without removing the webhook URL |
 
 ## AppInsights Settings
 
@@ -53,6 +55,8 @@ SDK_EXTENSION_ID=EXT-1111-1111
 SDK_EXTENSION_URL=http://devmock:8000
 MPT_KEY_VAULT_NAME=""
 MPT_ORDERS_API_POLLING_INTERVAL_SECS=120
+MPT_MSTEAMS_WEBHOOK_URL=https://prod-xx.westeurope.logic.azure.com/...
+MPT_TEAMS_NOTIFICATIONS_ENABLED=true
 MPT_PORTAL_BASE_URL=https://portal.s1.show
 MPT_PRODUCTS_IDS=PRD-1111-1111,PRD-2222-2222
 MPT_TOOL_STORAGE_TYPE=local
