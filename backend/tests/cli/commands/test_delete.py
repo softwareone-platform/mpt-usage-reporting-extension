@@ -4,7 +4,7 @@ from mpt_usage_reporting_extension.selectors import ProductSelector
 
 def test_delete_invokes_with_scope(mocker, runner):
     mocker.patch.object(cli.commands.delete, "build_service")
-    inner = mocker.patch.object(cli.commands.delete, "_delete")
+    inner = mocker.patch.object(cli.commands.delete, "delete")
 
     result = runner.invoke(cli.app, ["delete", "--product-id", "PRD-1"])
 
@@ -15,7 +15,7 @@ def test_delete_invokes_with_scope(mocker, runner):
 
 def test_delete_rejects_two_filters(mocker, runner):
     mocker.patch.object(cli.commands.delete, "build_service")
-    inner = mocker.patch.object(cli.commands.delete, "_delete")
+    inner = mocker.patch.object(cli.commands.delete, "delete")
 
     result = runner.invoke(cli.app, ["delete", "--product-id", "PRD-1", "--seller-id", "SEL-1"])
 
@@ -25,7 +25,7 @@ def test_delete_rejects_two_filters(mocker, runner):
 
 def test_delete_rejects_no_filter(mocker, runner):
     mocker.patch.object(cli.commands.delete, "build_service")
-    inner = mocker.patch.object(cli.commands.delete, "_delete")
+    inner = mocker.patch.object(cli.commands.delete, "delete")
 
     result = runner.invoke(cli.app, ["delete"])
 

@@ -5,6 +5,7 @@ from typing import override
 from mpt_api_client import RQLQuery
 from mpt_api_client.exceptions import MPTError
 from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
+from mpt_extension_sdk.observability import trace_span
 
 from mpt_usage_reporting_extension.exceptions import UpstreamSubscriptionError
 from mpt_usage_reporting_extension.persistence.protocols import (
@@ -124,6 +125,10 @@ class BucketDeleter:  # noqa: WPS214
         """
         return self._statement_agreements
 
+    @trace_span(
+        "usage_reporting.delete_buckets",
+        attributes={"usage_reporting.scope": lambda deleter, scope: type(scope).__name__},
+    )
     async def delete(self, scope: Selector | None) -> DeleteOutcome:
         """Delete the scope's buckets from both tables, then report."""
         self._statement_agreements = frozenset()
