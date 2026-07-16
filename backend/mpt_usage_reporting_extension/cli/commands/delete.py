@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from typing import Annotated
 
 import typer
+from mpt_extension_sdk.observability import trace_span
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 
 from mpt_usage_reporting_extension.mpt_client import build_service
@@ -16,7 +17,7 @@ from mpt_usage_reporting_extension.services.execution_tracker import ExecutionTr
 from mpt_usage_reporting_extension.types import Command
 
 
-def delete(
+def delete_command(
     product_id: Annotated[
         str | None,
         typer.Option("--product-id", help="Delete every stored bucket of this product."),
@@ -47,10 +48,16 @@ def delete(
         "subscription_id": subscription_id,
         "seller_id": seller_id,
     }
-    asyncio.run(_delete(build_service(), scope, parameters))
+    asyncio.run(delete(build_service(), scope, parameters))
 
 
-async def _delete(
+@trace_span(
+    "usage_reporting.delete",
+    attributes={
+        "usage_reporting.scope": lambda api_service, scope, parameters: type(scope).__name__,
+    },
+)
+async def delete(
     api_service: MPTAPIService, scope: Selector, parameters: Mapping[str, object]
 ) -> None:
     """Open the store and delete the scope's buckets."""
