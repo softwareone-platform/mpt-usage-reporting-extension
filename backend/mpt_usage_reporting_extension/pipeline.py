@@ -1,6 +1,9 @@
 import contextlib
 import datetime as dt
-from collections.abc import Iterable, Iterator, Mapping
+import functools
+import sys
+import traceback
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 
 import typer
@@ -31,6 +34,7 @@ from mpt_usage_reporting_extension.services.estimates_uploader import (
     EstimateUploadReport,
     updatable_subscription_ids,
 )
+from mpt_usage_reporting_extension.services.execution_notifier import ExecutionSummary
 from mpt_usage_reporting_extension.services.execution_tracker import (
     Execution,
     ExecutionTracker,
@@ -58,13 +62,7 @@ class UsageReportingPipeline:  # noqa: WPS214
 
     async def run(self, parameters: Mapping[str, object]) -> None:
         """Collect charges, persist them, update estimates, then prune old rows."""
-        async with PostgresDatabase(resolve_database_url()) as db:
-            tracker = ExecutionTracker(db.execution_repository())
-            async with tracker.track(Command.RUN, parameters) as execution:
-                await self._run(db, execution)
-                failed = execution.has_errors
-            if failed:
-                raise typer.Exit(code=1)
+        await self._tracked(Command.RUN, parameters, self._run)
 
     async def recalculate(
         self, scope: Selector | None, parameters: Mapping[str, object], *, dry_run: bool = False
@@ -81,18 +79,80 @@ class UsageReportingPipeline:  # noqa: WPS214
         When ``dry_run`` is enabled, every read/compute stage still runs, but all DB delete/upsert/
         prune actions and subscription estimate updates are replaced by no-ops.
         """
-        async with PostgresDatabase(resolve_database_url()) as db:
-            if dry_run:
-                typer.echo("Dry run: running recalculate in read-only mode (no writes or updates).")
+        if dry_run:
+            typer.echo("Dry run: running recalculate in read-only mode (no writes or updates).")
 
+        await self._tracked(
+            Command.RECALCULATE,
+            parameters,
+            functools.partial(self._reset_and_refill, scope, dry_run=dry_run),
+        )
+
+    async def _reset_and_refill(
+        self,
+        scope: Selector | None,
+        db: Database,
+        execution: Execution,
+        *,
+        dry_run: bool,
+    ) -> None:
+        """Delete the scope's buckets, then re-fill exactly what the reset removed."""
+        reset_scope = await self._reset(scope, db, dry_run=dry_run)
+        with self._scoped_charge_filter(reset_scope.subscriptions):
+            await self._refill(reset_scope, db, execution, dry_run=dry_run)
+
+    async def _tracked(
+        self,
+        command: Command,
+        parameters: Mapping[str, object],
+        body: Callable[[Database, Execution], Awaitable[None]],
+    ) -> None:
+        """Track the command's execution and notify Teams of its outcome.
+
+        Every outcome is reported: success (with the execution result as the run report),
+        completed-with-errors (as a failure, keeping the non-zero exit), and unhandled
+        exceptions (as a failure with the stacktrace, re-raised afterwards).
+        """
+        started_at = dt.datetime.now(tz=dt.UTC)
+        try:
+            execution = await self._track(command, parameters, body)
+        except Exception as exc:
+            await self._ctx.notifier.notify_failure(
+                self._finished_execution(command, started_at), str(exc), traceback.format_exc()
+            )
+            raise
+        summary = self._finished_execution(command, started_at)
+        if execution.has_errors:
+            await self._ctx.notifier.notify_failure(summary, self._errors_summary(execution.result))
+            raise typer.Exit(code=1)
+        await self._ctx.notifier.notify_success(summary, execution.result)
+
+    async def _track(
+        self,
+        command: Command,
+        parameters: Mapping[str, object],
+        body: Callable[[Database, Execution], Awaitable[None]],
+    ) -> Execution:
+        """Run the command body inside a fresh DB and a tracked execution row."""
+        async with PostgresDatabase(resolve_database_url()) as db:
             tracker = ExecutionTracker(db.execution_repository())
-            async with tracker.track(Command.RECALCULATE, parameters) as execution:
-                reset_scope = await self._reset(scope, db, dry_run=dry_run)
-                with self._scoped_charge_filter(reset_scope.subscriptions):
-                    await self._refill(reset_scope, db, execution, dry_run=dry_run)
-                failed = execution.has_errors
-            if failed:
-                raise typer.Exit(code=1)
+            async with tracker.track(command, parameters) as execution:
+                await body(db, execution)
+                return execution
+
+    def _finished_execution(self, command: Command, started_at: dt.datetime) -> ExecutionSummary:
+        """Snapshot the just-finished execution, measuring its duration up to now."""
+        return ExecutionSummary(
+            name=command.value,
+            command=" ".join(sys.argv),
+            started_at=started_at,
+            duration=dt.datetime.now(tz=dt.UTC) - started_at,
+        )
+
+    def _errors_summary(self, report: Mapping[str, object]) -> str:
+        entries = [f"{name}={count}" for name, count in report.items()]
+        rendered = ", ".join(entries)
+        return f"Command completed with errors ({rendered})"
 
     @contextlib.contextmanager
     def _scoped_charge_filter(self, subscriptions: Iterable[str]) -> Iterator[None]:

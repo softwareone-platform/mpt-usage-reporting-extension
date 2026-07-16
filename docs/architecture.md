@@ -106,14 +106,16 @@ can serve the SDK's built-in endpoints.
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
 | `services/charge_persistence.py`, `services/bucket_delete.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
+| `services/execution_notifier.py` | `ExecutionNotifier` — report each `run`/`recalculate` execution to MS Teams (success with the run report, or failure with error and stacktrace); disabled when `MPT_MSTEAMS_WEBHOOK_URL` is unset |
 | `app.py` | Bare `ExtensionApp` served by `mpt-ext run` |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |
 
 ## External integrations
 
 MPT Marketplace API (billing statements/charges, subscription price estimates,
-agreements), the MPT Extension SDK, optional Airtable (`mpt-tool` storage), and
-Jaeger/OpenTelemetry for local tracing. See
+agreements), the MPT Extension SDK, MS Teams execution notifications via a
+Workflows webhook (`mpt-extension-contrib-custom-notifications`), optional
+Airtable (`mpt-tool` storage), and Jaeger/OpenTelemetry for local tracing. See
 [external-integrations.md](external-integrations.md).
 
 ## Deployment shape
