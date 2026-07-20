@@ -1,10 +1,15 @@
 import os
-from typing import Self
+from typing import Any, Self
 
 import psycopg
 from psycopg.rows import DictRow, dict_row
 
 from mpt_usage_reporting_extension.persistence.postgres import insights, repositories
+from mpt_usage_reporting_extension.persistence.postgres.auth import (
+    entra_auth_enabled,
+    fetch_access_token,
+    fetch_access_token_async,
+)
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
     ExecutionRepository,
@@ -24,9 +29,27 @@ def resolve_database_url() -> str:
     return database_url
 
 
+def _sync_auth_kwargs() -> dict[str, Any]:
+    """Return connection kwargs carrying an Entra token password when enabled."""
+    if entra_auth_enabled():
+        return {"password": fetch_access_token()}
+    return {}
+
+
+async def _async_auth_kwargs() -> dict[str, Any]:
+    """Return connection kwargs carrying an Entra token password when enabled."""
+    if entra_auth_enabled():
+        return {"password": await fetch_access_token_async()}
+    return {}
+
+
 def connect_sync() -> psycopg.Connection:
     """Open a synchronous connection for schema migrations."""
-    return psycopg.connect(resolve_database_url(), connect_timeout=_CONNECT_TIMEOUT_SECONDS)
+    return psycopg.connect(
+        resolve_database_url(),
+        connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+        **_sync_auth_kwargs(),
+    )
 
 
 class PostgresDatabase:  # noqa: WPS214
@@ -43,6 +66,7 @@ class PostgresDatabase:  # noqa: WPS214
             autocommit=True,
             row_factory=dict_row,
             connect_timeout=_CONNECT_TIMEOUT_SECONDS,
+            **await _async_auth_kwargs(),
         )
         return self
 

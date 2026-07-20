@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pytest
+from psycopg.rows import dict_row
 
 from mpt_usage_reporting_extension.persistence.models import Charge
 from mpt_usage_reporting_extension.persistence.postgres import database, insights, repositories
@@ -39,6 +40,62 @@ def test_connect_sync_uses_resolved_url(mocker, monkeypatch):
         connect_timeout=10,
     )
     assert result is mock_connect.return_value
+
+
+def test_connect_sync_injects_entra_token_as_password(mocker, monkeypatch):
+    monkeypatch.setenv("MPT_DATABASE_URL", "postgresql://user@host:5432/db")
+    monkeypatch.setenv("MPT_DATABASE_ENTRA_AUTH", "true")
+    mocker.patch.object(database, "fetch_access_token", return_value="entra-token")
+    mock_connect = mocker.patch.object(database.psycopg, "connect", autospec=True)
+
+    database.connect_sync()  # act
+
+    mock_connect.assert_called_once_with(
+        "postgresql://user@host:5432/db",
+        connect_timeout=10,
+        password="entra-token",
+    )
+
+
+async def test_context_manager_injects_entra_token_as_password(mocker, monkeypatch):
+    monkeypatch.setenv("MPT_DATABASE_ENTRA_AUTH", "true")
+    mocker.patch.object(
+        database, "fetch_access_token_async", new=mocker.AsyncMock(return_value="entra-token")
+    )
+    connection = mocker.MagicMock()
+    connection.close = mocker.AsyncMock()
+    connect = mocker.patch.object(
+        database.psycopg.AsyncConnection, "connect", new=mocker.AsyncMock(return_value=connection)
+    )
+    store = database.PostgresDatabase("postgresql://user@host:5432/db")
+
+    async with store:
+        opened = store.connection
+
+    assert opened is connection
+    connect.assert_awaited_once_with(
+        "postgresql://user@host:5432/db",
+        autocommit=True,
+        row_factory=dict_row,
+        connect_timeout=10,
+        password="entra-token",
+    )
+
+
+async def test_context_manager_without_entra_omits_password(mocker, monkeypatch):
+    monkeypatch.delenv("MPT_DATABASE_ENTRA_AUTH", raising=False)
+    connection = mocker.MagicMock()
+    connection.close = mocker.AsyncMock()
+    connect = mocker.patch.object(
+        database.psycopg.AsyncConnection, "connect", new=mocker.AsyncMock(return_value=connection)
+    )
+    store = database.PostgresDatabase("postgresql://user@host:5432/db")
+
+    async with store:
+        opened = store.connection
+
+    assert opened is connection
+    assert "password" not in connect.await_args.kwargs
 
 
 def test_connection_before_open_raises():
