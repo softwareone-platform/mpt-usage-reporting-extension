@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 import typer
+from mpt_extension_sdk.observability import trace_span
 
 from mpt_usage_reporting_extension.persistence.postgres.database import (
     PostgresDatabase,
@@ -84,6 +85,10 @@ class AccumulationCleaner:
         return outcome
 
 
+@trace_span(
+    "usage_reporting.cleanup",
+    attributes={"usage_reporting.anchor": lambda anchor, parameters: anchor.isoformat()},
+)
 async def do_cleanup(anchor: dt.date, parameters: Mapping[str, object]) -> CleanupOutcome:
     """Open the store and prune both tables to the 18-month window ending at the anchor month."""
     async with PostgresDatabase(resolve_database_url()) as db:

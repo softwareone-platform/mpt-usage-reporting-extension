@@ -8,6 +8,7 @@ import typer
 from mpt_api_client import RQLQuery
 from mpt_api_client.exceptions import MPTError
 from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
+from mpt_extension_sdk.observability import trace_span
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 
 from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
@@ -108,7 +109,7 @@ def _candidates(
     assert_never(selector)  # pragma: no cover
 
 
-def push_estimates_by_id(
+def push_estimates_by_id_command(
     product_id: Annotated[
         str | None,
         typer.Option("--product-id", help="Push every stored subscription of this product."),
@@ -133,10 +134,16 @@ def push_estimates_by_id(
         subscription_id=subscription_id,
         seller_id=seller_id,
     )
-    asyncio.run(_push_estimates_by_id(build_service(), selector))
+    asyncio.run(push_estimates_by_id(build_service(), selector))
 
 
-async def _push_estimates_by_id(api_service: MPTAPIService, selector: Selector) -> None:
+@trace_span(
+    "usage_reporting.push_estimates_by_id",
+    attributes={
+        "usage_reporting.scope": lambda api_service, selector: type(selector).__name__,
+    },
+)
+async def push_estimates_by_id(api_service: MPTAPIService, selector: Selector) -> None:
     """Resolve the selector's subscription ids and upload their estimates."""
     anchor = last_month(dt.datetime.now(tz=dt.UTC).date())
     async with PostgresDatabase(resolve_database_url()) as db:

@@ -32,14 +32,24 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `MPT_MSTEAMS_WEBHOOK_URL` | - | `https://prod-xx.westeurope.logic.azure.com/...` | MS Teams Workflows webhook URL for `run`/`recalculate` execution notifications; leave unset to disable them |
 | `MPT_TEAMS_NOTIFICATIONS_ENABLED` | `true` | `false` | Toggle Teams execution notifications without removing the webhook URL |
 
-## AppInsights Settings
+## Observability Settings
 
-`APPLICATIONINSIGHTS_CONNECTION_STRING` and `OTEL_SERVICE_NAME` are optional for local development unless local telemetry is explicitly enabled. In production or telemetry-enabled environments, set both variables together.
+Tracing is bootstrapped in both runtime modes: the SDK serve runtime initializes it on
+startup, and the CLI initializes it before every command (see
+[`backend/mpt_usage_reporting_extension/observability.py`](../backend/mpt_usage_reporting_extension/observability.py)),
+so cronjob executions are traced too. Each exporter activates only when its destination
+variable is set: Azure Monitor when the Application Insights connection string is present,
+OTLP when an OTLP endpoint is present. With neither set, instrumentation stays active
+without exporting.
 
 | Environment Variable | Default | Example | Description |
 | --- | --- | --- | --- |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | - | `InstrumentationKey=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx;IngestionEndpoint=https://westeurope-1.in.applicationinsights.azure.com/;LiveEndpoint=https://westeurope.livediagnostics.monitor.azure.com/` | Azure Application Insights connection string |
-| `OTEL_SERVICE_NAME` | - | `Swo.Extensions.<ServiceName>` | Service name shown in telemetry |
+| `SDK_OBSERVABILITY_ENABLED` | `true` | `false` | Enables or disables the observability bootstrap |
+| `SDK_OTEL_SERVICE_NAME` | - | `Swo.Extension.UsageReporting` | Service name shown in telemetry (cloud role name in Application Insights) |
+| `SDK_APPLICATIONINSIGHTS_CONNECTION_STRING` | - | `InstrumentationKey=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx;IngestionEndpoint=https://westeurope-1.in.applicationinsights.azure.com/;LiveEndpoint=https://westeurope.livediagnostics.monitor.azure.com/` | Azure Application Insights connection string; enables the Azure Monitor exporter |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | - | `http://jaeger:4318` | OTLP collector endpoint; enables the OTLP exporter (local Jaeger) |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | - | `http://jaeger:4318/v1/traces` | Traces-specific OTLP endpoint; takes precedence over `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | - | `http/protobuf` | OTLP transport protocol, consumed by the exporter |
 
 ## Local Example
 
