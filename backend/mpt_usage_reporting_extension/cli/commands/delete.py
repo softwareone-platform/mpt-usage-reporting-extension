@@ -12,8 +12,12 @@ from mpt_usage_reporting_extension.persistence.postgres.database import (
     resolve_database_url,
 )
 from mpt_usage_reporting_extension.selectors import Selector, build_selector
-from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter
+from mpt_usage_reporting_extension.services.bucket_delete import (
+    BucketDeleter,
+    ScopeBucketDeleter,
+)
 from mpt_usage_reporting_extension.services.execution_tracker import ExecutionTracker
+from mpt_usage_reporting_extension.services.scope_resolver import ScopeResolver
 from mpt_usage_reporting_extension.types import Command
 
 
@@ -64,12 +68,19 @@ async def delete(
     async with PostgresDatabase(resolve_database_url()) as db:
         tracker = ExecutionTracker(db.execution_repository())
         async with tracker.track(Command.DELETE, parameters) as execution:
-            outcome = await BucketDeleter(
-                db.subscription_repository(),
-                db.agreement_repository(),
-                api_service.client.commerce.subscriptions,
-            ).delete(scope)
+            outcome = await _build_scope_deleter(api_service, db).delete(scope)
             execution.record_result(
                 subscription_deleted=len(outcome.subscriptions),
                 agreement_deleted=len(outcome.agreements),
             )
+
+
+def _build_scope_deleter(api_service: MPTAPIService, db: PostgresDatabase) -> ScopeBucketDeleter:
+    """Wire the scope deleter with its bucket deleter and shared resolver."""
+    resolver = ScopeResolver(
+        api_service.client.commerce.subscriptions, db.subscription_repository()
+    )
+    return ScopeBucketDeleter(
+        BucketDeleter(db.subscription_repository(), db.agreement_repository(), resolver),
+        resolver,
+    )
