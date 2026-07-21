@@ -58,7 +58,7 @@ def selector(mocker):
 
 @pytest.fixture
 def deleter(mocker):
-    stub = mocker.patch.object(pipeline, "BucketDeleter").return_value
+    stub = mocker.patch.object(pipeline, "ScopeBucketDeleter").return_value
     stub.delete = mocker.AsyncMock(return_value=DeleteOutcome())
     return stub
 
@@ -154,8 +154,7 @@ async def test_run_notifies_failure_with_stacktrace_and_reraises(
 
 
 async def test_recalculate_notifies_success(stub_database, usage, selector, deleter, notifier):
-    deleter.delete.return_value = DeleteOutcome()
-    deleter.statement_agreements = frozenset(("AGR-1",))
+    deleter.delete.return_value = DeleteOutcome(statement_agreements=frozenset(("AGR-1",)))
 
     await usage.recalculate(None, {})  # act
 
@@ -167,8 +166,7 @@ async def test_recalculate_notifies_success(stub_database, usage, selector, dele
 async def test_recalculate_deletes_then_prunes(
     mocker, stub_database, usage, selector, deleter, ctx
 ):
-    deleter.delete.return_value = DeleteOutcome()
-    deleter.statement_agreements = frozenset(("AGR-1",))
+    deleter.delete.return_value = DeleteOutcome(statement_agreements=frozenset(("AGR-1",)))
     anchor = dt.datetime.now(tz=dt.UTC).date()  # cleanup anchors on the current UTC month
 
     await usage.recalculate(None, {})  # act
@@ -186,8 +184,7 @@ async def test_recalculate_deletes_then_prunes(
 
 
 async def test_recalculate_exits_on_upload_failure(mocker, stub_database, usage, selector, deleter):
-    deleter.delete.return_value = DeleteOutcome()
-    deleter.statement_agreements = frozenset(("AGR-1",))
+    deleter.delete.return_value = DeleteOutcome(statement_agreements=frozenset(("AGR-1",)))
     uploader = mocker.patch.object(pipeline, "EstimatesUploader").return_value
     uploader.update = mocker.AsyncMock(return_value=mocker.Mock(has_failures=True, failed_count=1))
 
@@ -208,8 +205,9 @@ async def test_recalculate_dry_run_runs_reads_but_skips_mutations(
     charge_accumulation_factory,
     charge_totals_factory,
 ):
-    deleter.delete.return_value = DeleteOutcome(subscriptions=["SUB-1"])
-    deleter.statement_agreements = frozenset(("AGR-1",))
+    deleter.delete.return_value = DeleteOutcome(
+        subscriptions=["SUB-1"], statement_agreements=frozenset(("AGR-1",))
+    )
     mocker.patch.object(pipeline, "ChargeStreamer")
     mocker.patch.object(pipeline, "ChargeAccumulator").return_value.accumulate = mocker.AsyncMock(
         return_value=charge_totals_factory(
@@ -244,8 +242,9 @@ async def test_recalculate_dry_run_still_processes_upload_subscription_ids(
     charge_accumulation_factory,
     charge_totals_factory,
 ):
-    deleter.delete.return_value = DeleteOutcome(subscriptions=["SUB-1"])
-    deleter.statement_agreements = frozenset(("AGR-1",))
+    deleter.delete.return_value = DeleteOutcome(
+        subscriptions=["SUB-1"], statement_agreements=frozenset(("AGR-1",))
+    )
     mocker.patch.object(pipeline, "ChargeStreamer")
     mocker.patch.object(pipeline, "ChargeAccumulator").return_value.accumulate = mocker.AsyncMock(
         return_value=charge_totals_factory(
@@ -282,8 +281,9 @@ async def test_recalculate_persists_reset_only(
     charge_accumulation_factory,
     charge_totals_factory,
 ):
-    deleter.delete.return_value = DeleteOutcome(subscriptions=["SUB-1"])
-    deleter.statement_agreements = frozenset(("AGR-1",))
+    deleter.delete.return_value = DeleteOutcome(
+        subscriptions=["SUB-1"], statement_agreements=frozenset(("AGR-1",))
+    )
     mocker.patch.object(pipeline, "ChargeStreamer")
     accumulate = mocker.AsyncMock(
         return_value=charge_totals_factory(
@@ -307,8 +307,9 @@ async def test_recalculate_persists_reset_only(
 
 
 async def test_recalculate_agreement_scope(stub_database, usage, selector, deleter, ctx):
-    deleter.delete.return_value = DeleteOutcome(subscriptions=["SUB-7"])
-    deleter.statement_agreements = frozenset(("AGR-7",))
+    deleter.delete.return_value = DeleteOutcome(
+        subscriptions=["SUB-7"], statement_agreements=frozenset(("AGR-7",))
+    )
 
     await usage.recalculate(AgreementSelector("AGR-7"), {})  # act
 
@@ -355,8 +356,9 @@ async def test_recalculate_keeps_agreement_only_resets(
     charge_accumulation_factory,
     charge_totals_factory,
 ):
-    deleter.delete.return_value = DeleteOutcome(agreements=["AGR-7"])
-    deleter.statement_agreements = frozenset(("AGR-7",))
+    deleter.delete.return_value = DeleteOutcome(
+        agreements=["AGR-7"], statement_agreements=frozenset(("AGR-7",))
+    )
     mocker.patch.object(pipeline, "ChargeStreamer")
     accumulate = mocker.AsyncMock(
         return_value=charge_totals_factory(
@@ -388,8 +390,7 @@ async def test_recalculate_product_scope_bootstraps_empty_database(
     charge_accumulation_factory,
     charge_totals_factory,
 ):
-    deleter.delete.return_value = DeleteOutcome()
-    deleter.statement_agreements = frozenset(("AGR-1", "AGR-2"))
+    deleter.delete.return_value = DeleteOutcome(statement_agreements=frozenset(("AGR-1", "AGR-2")))
     mocker.patch.object(pipeline, "ChargeStreamer")
     accumulate = mocker.AsyncMock(
         return_value=charge_totals_factory(
@@ -423,7 +424,6 @@ async def test_recalculate_subscription_scope_bootstraps_empty_database(
     charge_totals_factory,
 ):
     deleter.delete.return_value = DeleteOutcome()
-    deleter.statement_agreements = frozenset()
     mocker.patch.object(pipeline, "ChargeStreamer")
     accumulate = mocker.AsyncMock(
         return_value=charge_totals_factory(
@@ -458,8 +458,7 @@ async def test_recalculate_agreement_scope_with_intact_agreement_bucket(
     charge_accumulation_factory,
     charge_totals_factory,
 ):
-    deleter.delete.return_value = DeleteOutcome()
-    deleter.statement_agreements = frozenset(("AGR-7",))
+    deleter.delete.return_value = DeleteOutcome(statement_agreements=frozenset(("AGR-7",)))
     mocker.patch.object(pipeline, "ChargeStreamer")
     accumulate = mocker.AsyncMock(
         return_value=charge_totals_factory(
@@ -488,7 +487,6 @@ async def test_recalculate_restores_previous_subscription_filter_on_refill_failu
     previous_filter = StatementChargeFilter(("PREVIOUS",))
     ctx.charge_filter = previous_filter
     deleter.delete.return_value = DeleteOutcome(subscriptions=["SUB-1"])
-    deleter.statement_agreements = frozenset()
     mocker.patch.object(pipeline, "ChargeStreamer")
     mocker.patch.object(pipeline, "ChargeAccumulator").return_value.accumulate = mocker.AsyncMock(
         side_effect=RuntimeError("boom")

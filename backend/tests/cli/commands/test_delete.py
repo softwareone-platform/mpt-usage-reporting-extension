@@ -41,7 +41,7 @@ def test_delete_deletes_scope_buckets(mocker, runner):
     mocker.patch.object(cli.commands.delete, "resolve_database_url")
     mocker.patch.object(cli.commands.delete, "PostgresDatabase", return_value=database)
     database.execution_repository = mocker.Mock(return_value=mocker.AsyncMock())
-    deleter = mocker.patch.object(cli.commands.delete, "BucketDeleter").return_value
+    deleter = mocker.patch.object(cli.commands.delete, "ScopeBucketDeleter").return_value
     deleter.delete = mocker.AsyncMock()
 
     result = runner.invoke(cli.app, ["delete", "--product-id", "PRD-1"])
