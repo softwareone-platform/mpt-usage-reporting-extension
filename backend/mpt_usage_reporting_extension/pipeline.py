@@ -23,7 +23,7 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 )
 from mpt_usage_reporting_extension.selectors import ProductSelector, Selector, SubscriptionSelector
 from mpt_usage_reporting_extension.services.accumulation_cleanup import AccumulationCleaner
-from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter
+from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter, ScopeBucketDeleter
 from mpt_usage_reporting_extension.services.charge_persistence import AccumulationPersister
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
@@ -41,6 +41,7 @@ from mpt_usage_reporting_extension.services.execution_tracker import (
     ExecutionTracker,
     StatementProcessingRecorder,
 )
+from mpt_usage_reporting_extension.services.scope_resolver import ScopeResolver
 from mpt_usage_reporting_extension.services.statements import StatementReport, StatementSelector
 from mpt_usage_reporting_extension.types import Command, Month
 from mpt_usage_reporting_extension.utils import last_month
@@ -129,15 +130,21 @@ class UsageReportingPipeline:  # noqa: WPS214
         reset scopes are unioned into one outcome.
         """
         api_service = self._ctx.api_service
-        deleter = BucketDeleter(
-            db.subscription_repository(),
-            db.agreement_repository(),
-            api_service.client.commerce.subscriptions,
-            dry_run=dry_run,
+        resolver = ScopeResolver(
+            api_service.client.commerce.subscriptions, db.subscription_repository()
+        )
+        deleter = ScopeBucketDeleter(
+            BucketDeleter(
+                db.subscription_repository(),
+                db.agreement_repository(),
+                resolver,
+                dry_run=dry_run,
+            ),
+            resolver,
         )
         if scope is not None:
             reset = await deleter.delete(scope)
-            statement_agreements = deleter.statement_agreements
+            statement_agreements = reset.statement_agreements
             if isinstance(scope, SubscriptionSelector):
                 return ResetScope(
                     subscriptions=frozenset((scope.subscription_id,)),
@@ -384,14 +391,14 @@ class UsageReportingPipeline:  # noqa: WPS214
         if report.has_failures:
             execution.has_errors = True
 
-    async def _reset_products(self, deleter: BucketDeleter) -> ResetScope:
+    async def _reset_products(self, deleter: ScopeBucketDeleter) -> ResetScope:
         """Delete each configured product's buckets and union their reset scopes."""
         subscriptions: set[str] = set()
         statement_agreements: set[str] = set()
         for product_id in self._ctx.product_ids:
             outcome = await deleter.delete(ProductSelector(product_id))  # noqa: WPS476
             subscriptions |= set(outcome.subscriptions)
-            statement_agreements |= deleter.statement_agreements
+            statement_agreements |= outcome.statement_agreements
         narrowed = frozenset(statement_agreements)
         return ResetScope(frozenset(subscriptions), narrowed, narrowed)
 
