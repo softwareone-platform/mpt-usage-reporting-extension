@@ -5,6 +5,8 @@ import psycopg
 from psycopg.rows import DictRow, dict_row
 
 from mpt_usage_reporting_extension.persistence.postgres import insights, repositories
+from mpt_usage_reporting_extension.persistence.postgres.auth import DatabaseAuth, resolve_auth
+from mpt_usage_reporting_extension.persistence.postgres.connection import ConnectionOptions
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
     ExecutionRepository,
@@ -13,7 +15,6 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 )
 
 _DATABASE_URL_ENV_VAR = "MPT_DATABASE_URL"
-_CONNECT_TIMEOUT_SECONDS = 10
 
 
 def resolve_database_url() -> str:
@@ -24,25 +25,42 @@ def resolve_database_url() -> str:
     return database_url
 
 
-def connect_sync() -> psycopg.Connection:
+def connect_sync(auth: DatabaseAuth | None = None) -> psycopg.Connection:
     """Open a synchronous connection for schema migrations."""
-    return psycopg.connect(resolve_database_url(), connect_timeout=_CONNECT_TIMEOUT_SECONDS)
+    resolved = resolve_auth() if auth is None else auth
+    options = resolved.apply(ConnectionOptions.from_dsn(resolve_database_url()))
+    return psycopg.connect(
+        host=options.host,
+        port=options.port,
+        dbname=options.dbname,
+        user=options.user,
+        password=options.password,
+        sslmode=options.sslmode,
+        connect_timeout=options.connect_timeout,
+    )
 
 
 class PostgresDatabase:  # noqa: WPS214
     """PostgreSQL store opened from a DSN, handing out accumulation repositories."""
 
-    def __init__(self, dsn: str) -> None:
-        self._dsn = dsn
+    def __init__(self, dsn: str, auth: DatabaseAuth | None = None) -> None:
+        self._options = ConnectionOptions.from_dsn(dsn)
+        self._auth = resolve_auth() if auth is None else auth
         self._connection: psycopg.AsyncConnection[DictRow] | None = None
 
     async def __aenter__(self) -> Self:
         """Open a single autocommit connection with dict rows."""
+        options = await self._auth.apply_async(self._options)
         self._connection = await psycopg.AsyncConnection.connect(
-            self._dsn,
+            host=options.host,
+            port=options.port,
+            dbname=options.dbname,
+            user=options.user,
+            password=options.password,
+            sslmode=options.sslmode,
+            connect_timeout=options.connect_timeout,
             autocommit=True,
             row_factory=dict_row,
-            connect_timeout=_CONNECT_TIMEOUT_SECONDS,
         )
         return self
 

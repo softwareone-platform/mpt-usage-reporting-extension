@@ -2,11 +2,13 @@ owner: sirius
 migrations:
   data:
     enabled: true
+    serviceAccountName: mpt-extension-usage-reporting-sa
     image: nlpapp0336cre.azurecr.io/mpt-extension-usage-reporting
     command: ["mpt-service-cli"]
     args: ["migrate", "--data"]
 dbup:
   enabled: true
+  serviceAccountName: mpt-extension-usage-reporting-sa
   image: nlpapp0336cre.azurecr.io/mpt-extension-usage-reporting
   command: ["mpt-service-cli"]
   args: ["migrate", "--schema"]
@@ -32,6 +34,9 @@ env:
     name: MPT_API_BASE_URL
   MpProductsIds:
     name: MPT_PRODUCTS_IDS
+  MptDatabaseEntraAuth:
+    name: MPT_DATABASE_ENTRA_AUTH
+    defaultValue: "true"
   MptTeamsNotificationsEnabled:
     name: MPT_TEAMS_NOTIFICATIONS_ENABLED
     defaultValue: "true"
@@ -51,7 +56,7 @@ env:
 secrets:
   MpApiToken:
     name: MPT_API_TOKEN
-  MptDatabaseUrl:
+  postgresqlConnectionString:
     name: MPT_DATABASE_URL
   SdkApplicationInsightsConnectiaddonString:
     name: SDK_APPLICATIONINSIGHTS_CONNECTION_STRING
