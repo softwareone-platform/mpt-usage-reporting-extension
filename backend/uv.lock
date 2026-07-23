@@ -1424,6 +1424,7 @@ name = "mpt-usage-reporting-extension"
 version = "6.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "azure-identity" },
     { name = "mpt-api-client" },
     { name = "mpt-extension-contrib-custom-notifications", extra = ["teams"] },
     { name = "mpt-extension-sdk", extra = ["azure-monitor"] },
@@ -1452,6 +1453,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "azure-identity", specifier = "==1.25.*" },
     { name = "mpt-api-client", specifier = "==6.3.*" },
     { name = "mpt-extension-contrib-custom-notifications", extras = ["teams"], specifier = "==1.2.*" },
     { name = "mpt-extension-sdk", extras = ["azure-monitor"], specifier = "==6.5.*" },
