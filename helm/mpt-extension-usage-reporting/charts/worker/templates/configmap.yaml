@@ -8,6 +8,7 @@ metadata:
 data:
   MPT_API_BASE_URL: {{ .Values.global.MpBaseUrl | quote }}
   MPT_PRODUCTS_IDS: {{ .Values.global.MpProductsIds | quote }}
+  MPT_DATABASE_ENTRA_AUTH: {{ .Values.global.MptDatabaseEntraAuth | quote }}
   MPT_TEAMS_NOTIFICATIONS_ENABLED: {{ .Values.global.MptTeamsNotificationsEnabled | quote }}
   MPT_TOOL_STORAGE_TYPE: {{ .Values.global.MpToolStorageType | quote }}
   SDK_EXTENSION_ID: {{ .Values.global.SdkExtensionId | quote }}
