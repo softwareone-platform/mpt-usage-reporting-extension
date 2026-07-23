@@ -1,9 +1,30 @@
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
+from psycopg.rows import dict_row
 
 from mpt_usage_reporting_extension.persistence.models import Charge
-from mpt_usage_reporting_extension.persistence.postgres import database, insights, repositories
+from mpt_usage_reporting_extension.persistence.postgres import (
+    auth,
+    database,
+    insights,
+    repositories,
+)
+from mpt_usage_reporting_extension.persistence.postgres.connection import ConnectionOptions
+
+
+class _StubAuth:
+    """DatabaseAuth stub that sets a fixed password on the options."""
+
+    def __init__(self, password: str):
+        self._password = password
+
+    def apply(self, options: ConnectionOptions) -> ConnectionOptions:
+        return replace(options, password=self._password)
+
+    async def apply_async(self, options: ConnectionOptions) -> ConnectionOptions:
+        return replace(options, password=self._password)
 
 
 def test_resolve_database_url_env_value(monkeypatch):
@@ -30,15 +51,86 @@ def test_resolve_database_url_empty_raises(monkeypatch):
 
 def test_connect_sync_uses_resolved_url(mocker, monkeypatch):
     monkeypatch.setenv("MPT_DATABASE_URL", "postgresql://user:pass@host:5432/db")
+    monkeypatch.delenv("MPT_DATABASE_ENTRA_AUTH", raising=False)
     mock_connect = mocker.patch.object(database.psycopg, "connect", autospec=True)
 
     result = database.connect_sync()
 
     mock_connect.assert_called_once_with(
-        "postgresql://user:pass@host:5432/db",
+        host="host",
+        port=5432,
+        dbname="db",
+        user="user",
+        password="pass",
+        sslmode=None,
         connect_timeout=10,
     )
     assert result is mock_connect.return_value
+
+
+def test_connect_sync_injected_auth_sets_password(mocker, monkeypatch):
+    monkeypatch.setenv("MPT_DATABASE_URL", "postgresql://user@host:5432/db")
+    mock_connect = mocker.patch.object(database.psycopg, "connect", autospec=True)
+
+    database.connect_sync(auth=_StubAuth("entra-token"))  # act
+
+    assert mock_connect.call_args.kwargs["password"] == "entra-token"
+
+
+def test_connect_sync_entra_env_injects_token_password(mocker, monkeypatch):
+    monkeypatch.setenv("MPT_DATABASE_URL", "postgresql://user@host:5432/db")
+    monkeypatch.setenv("MPT_DATABASE_ENTRA_AUTH", "true")
+    credential = mocker.MagicMock()
+    credential.get_token.return_value.token = "entra-token"
+    mocker.patch.object(auth, "DefaultAzureCredential", return_value=credential)
+    mock_connect = mocker.patch.object(database.psycopg, "connect", autospec=True)
+
+    database.connect_sync()  # act
+
+    assert mock_connect.call_args.kwargs["password"] == "entra-token"
+
+
+async def test_context_manager_injected_auth_sets_password(mocker):
+    connection = mocker.MagicMock()
+    connection.close = mocker.AsyncMock()
+    connect = mocker.patch.object(
+        database.psycopg.AsyncConnection, "connect", new=mocker.AsyncMock(return_value=connection)
+    )
+    store = database.PostgresDatabase(
+        "postgresql://user@host:5432/db", auth=_StubAuth("entra-token")
+    )
+
+    async with store:
+        opened = store.connection
+
+    assert opened is connection
+    connect.assert_awaited_once_with(
+        host="host",
+        port=5432,
+        dbname="db",
+        user="user",
+        password="entra-token",
+        sslmode=None,
+        connect_timeout=10,
+        autocommit=True,
+        row_factory=dict_row,
+    )
+
+
+async def test_context_manager_without_entra_keeps_dsn_password(mocker, monkeypatch):
+    monkeypatch.delenv("MPT_DATABASE_ENTRA_AUTH", raising=False)
+    connection = mocker.MagicMock()
+    connection.close = mocker.AsyncMock()
+    connect = mocker.patch.object(
+        database.psycopg.AsyncConnection, "connect", new=mocker.AsyncMock(return_value=connection)
+    )
+    store = database.PostgresDatabase("postgresql://user:pass@host:5432/db")
+
+    async with store:
+        opened = store.connection
+
+    assert opened is connection
+    assert connect.await_args.kwargs["password"] == "pass"
 
 
 def test_connection_before_open_raises():

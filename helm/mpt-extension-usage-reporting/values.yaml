@@ -25,6 +25,7 @@ global:
   # MPT_DATABASE_URL: PostgreSQL connection string, base64-encoded. Required at
   # runtime by every command that touches the store and by the schema migrations.
   MptDatabaseUrl: ZGVmYXVsdA==
+  MptDatabaseEntraAuth: "true"
   # MPT_TEAMS_NOTIFICATIONS_ENABLED: report run/recalculate executions to MS Teams.
   MptTeamsNotificationsEnabled: "true"
   # MPT_MSTEAMS_WEBHOOK_URL: MS Teams webhook URL for run reporting, base64-encoded.
