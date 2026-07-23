@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from typing import Annotated
 
 import typer
+from mpt_extension_sdk.observability import trace_span
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
 
 from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
@@ -20,7 +21,7 @@ from mpt_usage_reporting_extension.types import Month
 from mpt_usage_reporting_extension.utils import last_month, to_date  # noqa: WPS347
 
 
-def push_estimates_by_updated_at(
+def push_estimates_by_updated_at_command(
     updated_on: Annotated[
         dt.datetime | None,
         typer.Option(
@@ -33,10 +34,16 @@ def push_estimates_by_updated_at(
     """Recompute price estimates for subscriptions stored on a given day and upload them."""
     today = dt.datetime.now(tz=dt.UTC).date()
     day = to_date(updated_on) or today
-    asyncio.run(_push_estimates_by_updated_at(build_service(), day))
+    asyncio.run(push_estimates_by_updated_at(build_service(), day))
 
 
-async def _push_estimates_by_updated_at(api_service: MPTAPIService, updated_at: dt.date) -> None:
+@trace_span(
+    "usage_reporting.push_estimates_by_updated_at",
+    attributes={
+        "usage_reporting.updated_at": lambda api_service, updated_at: updated_at.isoformat(),
+    },
+)
+async def push_estimates_by_updated_at(api_service: MPTAPIService, updated_at: dt.date) -> None:
     """Upload estimates for every subscription whose stored rows were last written on updated_at."""
     anchor = last_month(dt.datetime.now(tz=dt.UTC).date())
     async with PostgresDatabase(resolve_database_url()) as db:

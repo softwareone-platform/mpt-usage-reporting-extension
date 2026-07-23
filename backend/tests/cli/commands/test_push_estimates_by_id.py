@@ -155,7 +155,7 @@ async def test_resolve_drops_synthetic_ids(repo, subscriptions, sub1):
 
 def test_invokes_push_estimates_by_id(mocker, runner):
     mocker.patch.object(cli.commands.push_estimates_by_id, "build_service")
-    push = mocker.patch.object(cli.commands.push_estimates_by_id, "_push_estimates_by_id")
+    push = mocker.patch.object(cli.commands.push_estimates_by_id, "push_estimates_by_id")
 
     result = runner.invoke(cli.app, ["push-estimates", "by-id", "--subscription-id", "SUB-1"])
 
@@ -167,7 +167,7 @@ def test_invokes_push_estimates_by_id(mocker, runner):
 
 
 def test_rejects_two_selectors(mocker, runner):
-    push = mocker.patch.object(cli.commands.push_estimates_by_id, "_push_estimates_by_id")
+    push = mocker.patch.object(cli.commands.push_estimates_by_id, "push_estimates_by_id")
 
     result = runner.invoke(
         cli.app, ["push-estimates", "by-id", "--product-id", "PRD-1", "--seller-id", "SEL-2"]
@@ -178,7 +178,7 @@ def test_rejects_two_selectors(mocker, runner):
 
 
 def test_rejects_no_arguments(mocker, runner):
-    push = mocker.patch.object(cli.commands.push_estimates_by_id, "_push_estimates_by_id")
+    push = mocker.patch.object(cli.commands.push_estimates_by_id, "push_estimates_by_id")
 
     result = runner.invoke(cli.app, ["push-estimates", "by-id"])
 

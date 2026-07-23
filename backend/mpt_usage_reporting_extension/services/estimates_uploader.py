@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from mpt_api_client.exceptions import MPTError
+from mpt_extension_sdk.observability import trace_span
 from mpt_extension_sdk.services.mpt_api_service.subscription import SubscriptionService
 from rich.console import Console
 
@@ -222,6 +223,13 @@ class EstimatesUploader:
         self._dry_run = dry_run
         self._semaphore = asyncio.Semaphore(max_concurrency)
 
+    @trace_span(
+        "usage_reporting.upload_estimates",
+        attributes={
+            "usage_reporting.year": lambda uploader, subscription_ids, year, month: int(year),
+            "usage_reporting.month": lambda uploader, subscription_ids, year, month: int(month),
+        },
+    )
     async def update(
         self,
         subscription_ids: AsyncIterable[str] | Iterable[str],
