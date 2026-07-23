@@ -25,9 +25,6 @@ global:
   # MPT_DATABASE_URL: PostgreSQL connection string, base64-encoded. Required at
   # runtime by every command that touches the store and by the schema migrations.
   MptDatabaseUrl: ZGVmYXVsdA==
-  # MPT_DATABASE_ENTRA_AUTH: authenticate database connections with an Entra ID
-  # access token from the ambient workload-identity credential instead of a
-  # password in MPT_DATABASE_URL.
   MptDatabaseEntraAuth: "true"
   # MPT_TEAMS_NOTIFICATIONS_ENABLED: report run/recalculate executions to MS Teams.
   MptTeamsNotificationsEnabled: "true"
