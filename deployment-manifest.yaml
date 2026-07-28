@@ -40,9 +40,14 @@ env:
   MptTeamsNotificationsEnabled:
     name: MPT_TEAMS_NOTIFICATIONS_ENABLED
     defaultValue: "true"
-  MpToolStorageType:
+  MptToolStorageType:
     name: MPT_TOOL_STORAGE_TYPE
-    defaultValue: local
+    defaultValue: airtable
+  MptToolStorageAirtableBaseId:
+    name: MPT_TOOL_STORAGE_AIRTABLE_BASE_ID
+  MptToolStorageAirtableTableName:
+    name: MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME
+    defaultValue: Migrations
   SdkExtensionId:
     name: SDK_EXTENSION_ID
   SdkExtensionUrl:
@@ -62,6 +67,8 @@ secrets:
     name: SDK_APPLICATIONINSIGHTS_CONNECTION_STRING
   MptMsteamsWebhookUrl:
     name: MPT_MSTEAMS_WEBHOOK_URL
+  MptToolStorageAirtableApiKey:
+    name: MPT_TOOL_STORAGE_AIRTABLE_API_KEY
   SdkExtensionApiKey:
     name: SDK_EXTENSION_API_KEY
 cronjobs:
