@@ -10,7 +10,9 @@ data:
   MPT_PRODUCTS_IDS: {{ .Values.global.MpProductsIds | quote }}
   MPT_DATABASE_ENTRA_AUTH: {{ .Values.global.MptDatabaseEntraAuth | quote }}
   MPT_TEAMS_NOTIFICATIONS_ENABLED: {{ .Values.global.MptTeamsNotificationsEnabled | quote }}
-  MPT_TOOL_STORAGE_TYPE: {{ .Values.global.MpToolStorageType | quote }}
+  MPT_TOOL_STORAGE_TYPE: {{ .Values.global.MptToolStorageType | quote }}
+  MPT_TOOL_STORAGE_AIRTABLE_BASE_ID: {{ .Values.global.MptToolStorageAirtableBaseId | quote }}
+  MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME: {{ .Values.global.MptToolStorageAirtableTableName | quote }}
   SDK_EXTENSION_ID: {{ .Values.global.SdkExtensionId | quote }}
   SDK_EXTENSION_URL: {{ .Values.global.SdkExtensionUrl | quote }}
   SDK_OTEL_SERVICE_NAME: {{ .Values.global.SdkOtelServiceName | quote }}

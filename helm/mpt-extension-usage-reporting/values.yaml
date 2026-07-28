@@ -19,7 +19,7 @@ global:
   # MPT_API_BASE_URL: SoftwareOne Marketplace API URL.
   MpBaseUrl: "https://api.platform.softwareone.com"
   # MPT_API_TOKEN: SoftwareOne Marketplace API token, base64-encoded.
-  MpApiToken: ZGVmYXVsdA==
+  MptApiToken: ZGVmYXVsdA==
   # MPT_PRODUCTS_IDS: comma-separated Marketplace product ids the API/events process binds to.
   MpProductsIds: default
   # MPT_DATABASE_URL: PostgreSQL connection string, base64-encoded. Required at
@@ -30,7 +30,10 @@ global:
   MptTeamsNotificationsEnabled: "true"
   # MPT_MSTEAMS_WEBHOOK_URL: MS Teams webhook URL for run reporting, base64-encoded.
   MptMsteamsWebhookUrl: ZGVmYXVsdA==
-  MpToolStorageType: local
+  MptToolStorageType: airtable
+  MptToolStorageAirtableBaseId: ""
+  MptToolStorageAirtableTableName: Migrations
+  MptToolStorageAirtableApiKey: ZGVmYXVsdA==
   SdkExtensionId: EXT-2415-5207
   SdkExtensionUrl: https://EXT-2415-5207.ext.s1.show
   SdkExtensionApiKey: ZGVmYXVsdA==
