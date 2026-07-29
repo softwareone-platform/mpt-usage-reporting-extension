@@ -32,7 +32,7 @@ worker:
 env:
   apiFqdn:
     name: MPT_API_BASE_URL
-  MpProductsIds:
+  MptProductsIds:
     name: MPT_PRODUCTS_IDS
   MptDatabaseEntraAuth:
     name: MPT_DATABASE_ENTRA_AUTH
