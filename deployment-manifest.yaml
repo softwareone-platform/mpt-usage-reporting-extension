@@ -1,0 +1,82 @@
+owner: sirius
+migrations:
+  data:
+    enabled: true
+    image: nlpapp0336cre.azurecr.io/mpt-extension-usage-reporting
+    serviceAccountName: mpt-extension-usage-reporting-sa
+    command: ["mpt-service-cli"]
+    args: ["migrate", "--data"]
+  schema:
+    enabled: true
+    image: nlpapp0336cre.azurecr.io/mpt-extension-usage-reporting
+    serviceAccountName: mpt-extension-usage-reporting-sa
+    command: ["mpt-service-cli"]
+    args: ["migrate", "--schema"]
+api:
+  enabled: true
+  serviceAccountName: mpt-extension-usage-reporting-sa
+  image: mpt-extension-usage-reporting
+  port: 80
+  probesEnabled: false
+  hosts:
+    - customer-api.domain.global
+    - extensions-api.domain.global
+  http:
+    - match:
+        - uri:
+            prefix: /mpt-extension-usage-reporting-api/
+      rewrite:
+        uri: /
+worker:
+  enabled: false
+env:
+  apiFqdn:
+    name: MPT_API_BASE_URL
+  MpProductsIds:
+    name: MPT_PRODUCTS_IDS
+  MptDatabaseEntraAuth:
+    name: MPT_DATABASE_ENTRA_AUTH
+    defaultValue: "true"
+  MptTeamsNotificationsEnabled:
+    name: MPT_TEAMS_NOTIFICATIONS_ENABLED
+    defaultValue: "true"
+  MptToolStorageType:
+    name: MPT_TOOL_STORAGE_TYPE
+    defaultValue: airtable
+  MptToolStorageAirtableBaseId:
+    name: MPT_TOOL_STORAGE_AIRTABLE_BASE_ID
+  MptToolStorageAirtableTableName:
+    name: MPT_TOOL_STORAGE_AIRTABLE_TABLE_NAME
+    defaultValue: Migrations
+  SdkExtensionId:
+    name: SDK_EXTENSION_ID
+  SdkExtensionUrl:
+    name: SDK_EXTENSION_URL
+  SdkOtelServiceName:
+    name: SDK_OTEL_SERVICE_NAME
+    defaultValue: Swo.Extension.UsageReporting
+  SdkObservabilityEnabled:
+    name: SDK_OBSERVABILITY_ENABLED
+    defaultValue: "false"
+secrets:
+  MptApiToken:
+    name: MPT_API_TOKEN
+  MptMsteamsWebhookUrl:
+    name: MPT_MSTEAMS_WEBHOOK_URL
+  MptToolStorageAirtableApiKey:
+    name: MPT_TOOL_STORAGE_AIRTABLE_API_KEY
+  postgresqlConnectionString:
+    name: MPT_DATABASE_URL
+  SdkApplicationInsightsConnectionString:
+    name: SDK_APPLICATIONINSIGHTS_CONNECTION_STRING
+  SdkExtensionApiKey:
+    name: SDK_EXTENSION_API_KEY
+cronjobs:
+  subscription-usage:
+    serviceAccountName: mpt-extension-usage-reporting-sa
+    image: mpt-extension-usage-reporting
+    schedule: "0 2 * * *"
+    command:
+      - mpt-billing-subscription-usage
+    args:
+      - run
