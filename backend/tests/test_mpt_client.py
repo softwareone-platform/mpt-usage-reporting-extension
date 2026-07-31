@@ -1,6 +1,7 @@
 import pytest
 
 from mpt_usage_reporting_extension import mpt_client
+from mpt_usage_reporting_extension.exceptions import ConfigurationError
 
 
 def test_build_service_uses_mpt_api_token(monkeypatch, mocker):
@@ -19,5 +20,5 @@ def test_build_service_requires_token_and_url(monkeypatch):
     monkeypatch.delenv("MPT_API_TOKEN", raising=False)
     monkeypatch.delenv("MPT_API_BASE_URL", raising=False)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ConfigurationError):
         mpt_client.build_service()  # act

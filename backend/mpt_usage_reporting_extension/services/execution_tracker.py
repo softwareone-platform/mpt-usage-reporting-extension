@@ -35,14 +35,15 @@ class ExecutionTracker:
         """Open an execution row, yield its handle, then finalise its status and result.
 
         A clean exit is ``success``, unless the handle's ``has_errors`` flag is set (partial
-        failure, e.g. estimate uploads), which yields ``completed_with_errors``. Any exception
+        failure, e.g. estimate uploads), which yields ``completed_with_errors``. An ``Exception``
         escaping the body finalises the row as ``failed`` (with the error in the result) and
-        re-raises.
+        re-raises; ``BaseException``s such as ``KeyboardInterrupt`` and
+        ``asyncio.CancelledError`` propagate without finalising the row.
         """
         execution = Execution(await self._executions.start(command, parameters))
         try:
             yield execution
-        except BaseException as exc:  # noqa: WPS424  (includes typer.Exit)
+        except Exception as exc:
             execution.record_result(error=str(exc))
             await self._executions.finish(execution.id, ExecutionStatus.FAILED, execution.result)
             raise
@@ -66,13 +67,14 @@ class StatementProcessingRecorder:
     async def record(self, statement_id: str) -> AsyncIterator[None]:
         """Open a processing row for the statement, then finalise it on exit.
 
-        A clean exit is ``success``; any exception escaping the body finalises the row as
-        ``failure`` (with the error message) and re-raises.
+        A clean exit is ``success``; an ``Exception`` escaping the body finalises the row as
+        ``failure`` (with the error message) and re-raises. ``BaseException``s such as
+        ``KeyboardInterrupt`` and ``asyncio.CancelledError`` propagate without finalising the row.
         """
         processing_id = await self._repository.start(self._execution_id, statement_id)
         try:
             yield
-        except BaseException as exc:  # noqa: WPS424
+        except Exception as exc:
             await self._repository.finish(processing_id, StatementStatus.FAILURE, str(exc))
             raise
         else:

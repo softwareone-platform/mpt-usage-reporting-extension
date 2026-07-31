@@ -16,8 +16,9 @@ When applicable, read the repository in this order:
 4. [docs/deployment.md](docs/deployment.md) for configuration and runtime parameters.
 5. [docs/contributing.md](docs/contributing.md) for the repository workflow and expected developer commands.
 6. [docs/testing.md](docs/testing.md) before changing code or tests.
-7. [docs/migrations.md](docs/migrations.md) when a task mentions schema or data migrations.
-8. [docs/documentation.md](docs/documentation.md) when changing repository documentation.
+7. [docs/error-handling.md](docs/error-handling.md) when a task touches exceptions, retries, or failure reporting.
+8. [docs/migrations.md](docs/migrations.md) when a task mentions schema or data migrations.
+9. [docs/documentation.md](docs/documentation.md) when changing repository documentation.
 
 Then inspect the code paths relevant to the task:
 
