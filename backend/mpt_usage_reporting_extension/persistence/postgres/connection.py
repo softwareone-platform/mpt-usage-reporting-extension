@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 
 from psycopg import conninfo
 
+from mpt_usage_reporting_extension.exceptions import ConfigurationError
+
 _MODELED_PARAMETERS = frozenset((
     "host",
     "port",
@@ -39,7 +41,7 @@ class ConnectionOptions:
         }
         unknown = ", ".join(sorted(set(parsed) - _MODELED_PARAMETERS))
         if unknown:
-            raise RuntimeError(f"Unsupported PostgreSQL connection parameter(s): {unknown}")
+            raise ConfigurationError(f"Unsupported PostgreSQL connection parameter(s): {unknown}")
         defaults = cls()
         return cls(
             host=parsed.get("host", defaults.host),

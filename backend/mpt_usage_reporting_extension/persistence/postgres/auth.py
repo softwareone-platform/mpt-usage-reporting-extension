@@ -6,6 +6,7 @@ from typing import Protocol, override
 
 from azure.identity import DefaultAzureCredential
 
+from mpt_usage_reporting_extension.exceptions import ConfigurationError
 from mpt_usage_reporting_extension.persistence.postgres.connection import ConnectionOptions
 
 _ENTRA_AUTH_ENV_VAR = "MPT_DATABASE_ENTRA_AUTH"
@@ -71,7 +72,9 @@ def _enforce_tls(options: ConnectionOptions) -> ConnectionOptions:
     if options.sslmode is None:
         return replace(options, sslmode="require")
     if options.sslmode not in _TLS_SSLMODES:
-        raise RuntimeError(f"Entra ID database auth requires a TLS sslmode, got: {options.sslmode}")
+        raise ConfigurationError(
+            f"Entra ID database auth requires a TLS sslmode, got: {options.sslmode}"
+        )
     return options
 
 

@@ -226,7 +226,6 @@ class BucketDeleter:  # noqa: WPS214
                     seen.add(agreement_id)
                     yield agreement_id
         except MPTError as exc:
-            logger.warning("Upstream error resolving agreement ids from subscriptions: %s", exc)
             raise UpstreamSubscriptionError(
                 "Failed to resolve agreement ids from subscriptions"
             ) from exc

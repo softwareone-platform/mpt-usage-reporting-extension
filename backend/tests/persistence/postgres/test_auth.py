@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from mpt_usage_reporting_extension.exceptions import ConfigurationError
 from mpt_usage_reporting_extension.persistence.postgres import auth
 from mpt_usage_reporting_extension.persistence.postgres.connection import ConnectionOptions
 
@@ -83,11 +84,11 @@ def test_azure_auth_keeps_tls_sslmode(options, credential, sslmode):
 
 @pytest.mark.parametrize("sslmode", ["disable", "allow", "prefer"])
 def test_azure_auth_rejects_non_tls_sslmode(options, credential, sslmode):
-    with pytest.raises(RuntimeError, match=sslmode):
+    with pytest.raises(ConfigurationError, match=sslmode):
         auth.AzureCredentialAuth().apply(replace(options, sslmode=sslmode))
 
 
 @pytest.mark.parametrize("sslmode", ["disable", "allow", "prefer"])
 async def test_azure_auth_async_rejects_non_tls_sslmode(options, credential, sslmode):
-    with pytest.raises(RuntimeError, match=sslmode):
+    with pytest.raises(ConfigurationError, match=sslmode):
         await auth.AzureCredentialAuth().apply_async(replace(options, sslmode=sslmode))

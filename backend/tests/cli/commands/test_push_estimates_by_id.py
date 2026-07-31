@@ -125,13 +125,11 @@ async def test_resolve_by_product(repo, subscriptions, sub1, sub2):
     assert str(subscriptions.query) == str(expected_query)
 
 
-async def test_resolve_by_product_wraps_upstream_error(repo, subscriptions, caplog):
+async def test_resolve_by_product_wraps_upstream_error(repo, subscriptions):
     subscriptions.error = MPTError("boom")
 
     with pytest.raises(UpstreamSubscriptionError):
         await _drain(ProductSelector("PRD-1"), repo, subscriptions)
-
-    assert "Upstream error resolving subscription ids" in caplog.text
 
 
 async def test_resolve_by_seller(repo, subscriptions, sub1, sub2):

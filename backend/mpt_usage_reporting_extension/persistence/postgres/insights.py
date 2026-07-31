@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator, Mapping
 import psycopg
 from psycopg.rows import DictRow
 
+from mpt_usage_reporting_extension.exceptions import ExtensionError
 from mpt_usage_reporting_extension.persistence.models import ExecutionRecord
 from mpt_usage_reporting_extension.persistence.postgres.repositories import utc_now
 from mpt_usage_reporting_extension.types import Command, ExecutionStatus, StatementStatus
@@ -34,7 +35,7 @@ _RECENT_EXECUTIONS = (
 def _require_row_id(row: DictRow | None) -> int:
     """Return the id from an INSERT ... RETURNING row, guarding the impossible None case."""
     if row is None:  # pragma: no cover - RETURNING always produces a row after an INSERT
-        raise RuntimeError("INSERT did not produce a row id")
+        raise ExtensionError("INSERT did not produce a row id")
     row_id: int = row["id"]
     return row_id
 

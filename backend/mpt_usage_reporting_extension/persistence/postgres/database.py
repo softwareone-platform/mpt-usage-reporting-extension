@@ -4,6 +4,7 @@ from typing import Self
 import psycopg
 from psycopg.rows import DictRow, dict_row
 
+from mpt_usage_reporting_extension.exceptions import ConfigurationError, ExtensionError
 from mpt_usage_reporting_extension.persistence.postgres import insights, repositories
 from mpt_usage_reporting_extension.persistence.postgres.auth import DatabaseAuth, resolve_auth
 from mpt_usage_reporting_extension.persistence.postgres.connection import ConnectionOptions
@@ -21,7 +22,9 @@ def resolve_database_url() -> str:
     """Resolve the PostgreSQL connection URL from the MPT_DATABASE_URL env var."""
     database_url = os.environ.get(_DATABASE_URL_ENV_VAR)
     if not database_url:
-        raise RuntimeError("PostgreSQL connection URL is not configured; set MPT_DATABASE_URL.")
+        raise ConfigurationError(
+            "PostgreSQL connection URL is not configured; set MPT_DATABASE_URL."
+        )
     return database_url
 
 
@@ -71,7 +74,7 @@ class PostgresDatabase:  # noqa: WPS214
     def connection(self) -> psycopg.AsyncConnection[DictRow]:
         """Return the underlying PostgreSQL connection."""
         if self._connection is None:
-            raise RuntimeError("Database is not open; enter the 'async with' context first.")
+            raise ExtensionError("Database is not open; enter the 'async with' context first.")
         return self._connection
 
     def subscription_repository(self) -> SubscriptionAccumulationRepository:
