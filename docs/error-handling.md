@@ -12,6 +12,7 @@ single base:
 ```text
 ExtensionError
 ├── ConfigurationError            missing or invalid configuration
+├── DatabaseError                 database operation failed or persistence misuse
 └── UpstreamAPIError              an MPT API call failed upstream
     ├── UpstreamStatementError    selecting statements / streaming charges failed
     └── UpstreamSubscriptionError querying commerce subscriptions failed
@@ -22,9 +23,9 @@ ExtensionError
   `MPT_DATABASE_URL` (`persistence/postgres/database.py`), unsupported DSN
   parameters (`persistence/postgres/connection.py`), and a non-TLS `sslmode`
   with Entra ID auth (`persistence/postgres/auth.py`).
-- `ExtensionError` is raised directly only for internal-invariant guards
+- `DatabaseError` covers the persistence layer's internal-invariant guards
   (database used outside its `async with` context, an `INSERT ... RETURNING`
-  producing no row).
+  producing no row); `ExtensionError` is never raised directly.
 - CLI argument validation uses Typer's own `typer.BadParameter`
   (`window.py`, `selectors.py`); it is a framework boundary, not part of the
   package hierarchy.

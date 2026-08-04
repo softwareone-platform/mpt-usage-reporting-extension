@@ -4,7 +4,7 @@ from typing import Self
 import psycopg
 from psycopg.rows import DictRow, dict_row
 
-from mpt_usage_reporting_extension.exceptions import ConfigurationError, ExtensionError
+from mpt_usage_reporting_extension.exceptions import ConfigurationError, DatabaseError
 from mpt_usage_reporting_extension.persistence.postgres import insights, repositories
 from mpt_usage_reporting_extension.persistence.postgres.auth import DatabaseAuth, resolve_auth
 from mpt_usage_reporting_extension.persistence.postgres.connection import ConnectionOptions
@@ -74,7 +74,7 @@ class PostgresDatabase:  # noqa: WPS214
     def connection(self) -> psycopg.AsyncConnection[DictRow]:
         """Return the underlying PostgreSQL connection."""
         if self._connection is None:
-            raise ExtensionError("Database is not open; enter the 'async with' context first.")
+            raise DatabaseError("Database is not open; enter the 'async with' context first.")
         return self._connection
 
     def subscription_repository(self) -> SubscriptionAccumulationRepository:

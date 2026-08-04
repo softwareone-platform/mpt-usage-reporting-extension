@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from psycopg.rows import dict_row
 
-from mpt_usage_reporting_extension.exceptions import ConfigurationError, ExtensionError
+from mpt_usage_reporting_extension.exceptions import ConfigurationError, DatabaseError
 from mpt_usage_reporting_extension.persistence.models import Charge
 from mpt_usage_reporting_extension.persistence.postgres import (
     auth,
@@ -137,7 +137,7 @@ async def test_context_manager_without_entra_keeps_dsn_password(mocker, monkeypa
 def test_connection_before_open_raises():
     store = database.PostgresDatabase("postgresql://user:pass@host:5432/db")
 
-    with pytest.raises(ExtensionError, match="not open"):
+    with pytest.raises(DatabaseError, match="not open"):
         _ = store.connection  # act  # noqa: WPS122
 
 
@@ -151,7 +151,7 @@ async def test_context_manager_opens_and_closes(pg_admin_dsn):
 
     assert opened
     assert result
-    with pytest.raises(ExtensionError, match="not open"):
+    with pytest.raises(DatabaseError, match="not open"):
         _ = store.connection  # noqa: WPS122
 
 
@@ -163,7 +163,7 @@ async def test_close_is_safe_to_repeat(pg_admin_dsn):
     await store.close()  # act: second close after the context already closed
 
     assert opened
-    with pytest.raises(ExtensionError, match="not open"):
+    with pytest.raises(DatabaseError, match="not open"):
         _ = store.connection  # noqa: WPS122
 
 
