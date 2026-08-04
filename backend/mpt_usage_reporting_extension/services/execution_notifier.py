@@ -17,11 +17,12 @@ from mpt_extension_contrib.custom_notifications.channels.teams_cards import (
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 from mpt_usage_reporting_extension.utils import format_duration
 
-_SQL_DIAGNOSTICS = re.compile(r"\[(?:SQL|parameters):.*?\]", re.DOTALL)
+_SQL_DIAGNOSTICS = re.compile(r"\[(?:SQL|parameters):.*?\]$", re.DOTALL | re.MULTILINE)
 _URL_USERINFO = re.compile(r"(?<=://)[^/\s@]+(?=@)")
 _BEARER_TOKEN = re.compile(r"(?i)\bbearer\s+\S+")
+_AUTHORIZATION_HEADER = re.compile(r"(?i)\b(authorization)(\s*[=:]\s*)[^\n]+")
 _CREDENTIAL_ASSIGNMENT = re.compile(
-    r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|authorization|sig"
+    r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|sig"
     r"|signature)\b(\s*[=:]\s*)\S+"
 )
 _TRACEBACK_PATH = re.compile(r'File "([^"]+)"')
@@ -50,6 +51,7 @@ def sanitize_diagnostics(text: str) -> str:
     text = _SQL_DIAGNOSTICS.sub("[redacted]", text)
     text = _URL_USERINFO.sub("[redacted]", text)
     text = _BEARER_TOKEN.sub("[redacted]", text)
+    text = _AUTHORIZATION_HEADER.sub(r"\1\2[redacted]", text)
     text = _CREDENTIAL_ASSIGNMENT.sub(r"\1\2[redacted]", text)
     return _TRACEBACK_PATH.sub(_strip_path, text)
 

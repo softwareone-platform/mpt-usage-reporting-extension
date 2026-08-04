@@ -111,6 +111,11 @@ async def test_notify_failure_sanitizes_error_and_stacktrace(teams, execution):
     ("raw", "scrubbed"),
     [
         ("Authorization: Bearer eyJhbGciOi.secret", "Authorization: [redacted]"),
+        ("Authorization: Basic dXNlcjpodW50ZXIy", "Authorization: [redacted]"),
+        (
+            "boom\n[SQL: SELECT payload[0] FROM events WHERE id = %s]\ndone",
+            "boom\n[redacted]\ndone",
+        ),
         ("password=hunter2 rejected", "password=[redacted] rejected"),
         ("api_key: sk-live-123", "api_key: [redacted]"),
         ('File "/Users/me/repo/backend/cli.py"', 'File "cli.py"'),
