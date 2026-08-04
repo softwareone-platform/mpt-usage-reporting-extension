@@ -17,6 +17,7 @@ from mpt_extension_contrib.custom_notifications.channels.teams_cards import (
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 from mpt_usage_reporting_extension.utils import format_duration
 
+_REDACTED = "[redacted]"
 _SQL_DIAGNOSTICS = re.compile(r"\[(?:SQL|parameters):.*?\]$", re.DOTALL | re.MULTILINE)
 _URL_USERINFO = re.compile(r"(?<=://)[^/\s@]+(?=@)")
 _BEARER_TOKEN = re.compile(r"(?i)\bbearer\s+\S+")
@@ -48,11 +49,11 @@ def sanitize_diagnostics(text: str) -> str:
     filesystem prefix of stacktrace paths, keeping the exception type, message, and frame
     locations that identify the failure.
     """
-    text = _SQL_DIAGNOSTICS.sub("[redacted]", text)
-    text = _URL_USERINFO.sub("[redacted]", text)
-    text = _BEARER_TOKEN.sub("[redacted]", text)
-    text = _AUTHORIZATION_HEADER.sub(r"\1\2[redacted]", text)
-    text = _CREDENTIAL_ASSIGNMENT.sub(r"\1\2[redacted]", text)
+    text = _SQL_DIAGNOSTICS.sub(_REDACTED, text)
+    text = _URL_USERINFO.sub(_REDACTED, text)
+    text = _BEARER_TOKEN.sub(_REDACTED, text)
+    text = _AUTHORIZATION_HEADER.sub(rf"\1\2{_REDACTED}", text)
+    text = _CREDENTIAL_ASSIGNMENT.sub(rf"\1\2{_REDACTED}", text)
     return _TRACEBACK_PATH.sub(_strip_path, text)
 
 
