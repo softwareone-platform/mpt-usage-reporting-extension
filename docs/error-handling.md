@@ -76,8 +76,9 @@ MS Teams notifications are sent by `ExecutionNotifier`
 (`services/execution_notifier.py`) from the top-level boundary
 (`UsageReportingPipeline._tracked`), so only the tracked commands — `run` and
 `recalculate` — notify; `cleanup`, `delete`, and `push-estimates` do not.
-When notifications are enabled, every tracked execution produces exactly one
-card:
+When notifications are enabled, every tracked execution that completes or
+raises an `Exception` produces exactly one card; `KeyboardInterrupt` and
+`asyncio.CancelledError` produce no card:
 
 - **Success card (✅)** — the execution finished cleanly. Includes the
   execution facts (start, duration, command line) and the run report counts.
