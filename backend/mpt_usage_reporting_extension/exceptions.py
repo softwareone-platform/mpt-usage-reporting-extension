@@ -6,6 +6,10 @@ class ConfigurationError(ExtensionError):
     """Raised when required configuration is missing or invalid."""
 
 
+class DatabaseError(ExtensionError):
+    """A database operation failed or the persistence layer was misused."""
+
+
 class UpstreamAPIError(ExtensionError):
     """A Marketplace API call made as an API client failed upstream."""
 
