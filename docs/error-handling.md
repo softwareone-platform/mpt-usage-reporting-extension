@@ -85,7 +85,7 @@ card:
   command body. Includes the error message and the stacktrace, both scrubbed
   by `sanitize_diagnostics` (SQL statements and parameters, credentials, and
   local filesystem path prefixes are redacted before the card leaves the
-  host); the exception is re-raised afterwards, so the process still exits
+  host); the exception is re-raised afterward, so the process still exits
   non-zero.
 - **Failure card (💣), completed with errors** — the execution finished but
   the handle's `has_errors` flag was set (partial estimate-upload failures).
