@@ -1,4 +1,5 @@
 import datetime as dt
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -15,6 +16,42 @@ from mpt_extension_contrib.custom_notifications.channels.teams_cards import (
 
 from mpt_usage_reporting_extension.settings import ExtensionSettings
 from mpt_usage_reporting_extension.utils import format_duration
+
+_SQL_DIAGNOSTICS = re.compile(r"\[(?:SQL|parameters):.*?\]", re.DOTALL)
+_URL_USERINFO = re.compile(r"(?<=://)[^/\s@]+(?=@)")
+_BEARER_TOKEN = re.compile(r"(?i)\bbearer\s+\S+")
+_CREDENTIAL_ASSIGNMENT = re.compile(
+    r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|authorization|sig"
+    r"|signature)\b(\s*[=:]\s*)\S+"
+)
+_TRACEBACK_PATH = re.compile(r'File "([^"]+)"')
+_PATH_MARKERS = ("site-packages/", "mpt_usage_reporting_extension/")
+
+
+def _strip_path(match: re.Match[str]) -> str:
+    path = match.group(1)
+    stripped = path.rsplit("/", 1)[-1]
+    for marker in _PATH_MARKERS:
+        idx = path.rfind(marker)
+        if idx != -1:
+            stripped = path[idx:]
+            break
+    return f'File "{stripped}"'
+
+
+def sanitize_diagnostics(text: str) -> str:
+    """Scrub exception diagnostics before they leave the host for MS Teams.
+
+    Drops SQLAlchemy ``[SQL: ...]``/``[parameters: ...]`` sections (statements and customer
+    values), credentials (URL userinfo, bearer tokens, ``key=value`` secrets), and the local
+    filesystem prefix of stacktrace paths, keeping the exception type, message, and frame
+    locations that identify the failure.
+    """
+    text = _SQL_DIAGNOSTICS.sub("[redacted]", text)
+    text = _URL_USERINFO.sub("[redacted]", text)
+    text = _BEARER_TOKEN.sub("[redacted]", text)
+    text = _CREDENTIAL_ASSIGNMENT.sub(r"\1\2[redacted]", text)
+    return _TRACEBACK_PATH.sub(_strip_path, text)
 
 
 @dataclass(frozen=True)
@@ -56,7 +93,13 @@ class ExecutionNotifier:
     async def notify_failure(
         self, execution: ExecutionSummary, error: str, stacktrace: str = ""
     ) -> None:
-        """Send an error card with the execution facts, error message, and stacktrace."""
+        """Send an error card with the execution facts, error message, and stacktrace.
+
+        Both the error message and the stacktrace are passed through
+        ``sanitize_diagnostics`` first, so raw exception details never reach Teams.
+        """
+        error = sanitize_diagnostics(error)
+        stacktrace = sanitize_diagnostics(stacktrace)
         await self._teams.send_card(
             self._card(
                 f"💣 Command {execution.name} failed",
