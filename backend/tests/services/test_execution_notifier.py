@@ -88,6 +88,50 @@ async def test_notify_failure_includes_error_fact(teams, execution):
     assert entries["Command"] == execution.command
 
 
+async def test_notify_failure_sanitizes_error_and_stacktrace(teams, execution):
+    await execution_notifier.ExecutionNotifier(teams).notify_failure(
+        execution,
+        "connect to postgresql://user:hunter2@db/reporting failed",
+        'File "/home/app/.venv/lib/site-packages/sqlalchemy/engine.py", line 10\n'
+        "OperationalError: boom\n[SQL: SELECT * FROM subscriptions WHERE customer_id = %s]\n"
+        "[parameters: ('CUS-1234',)]",
+    )  # act
+
+    card = _sent_card(teams)
+    entries = _fact_entries(card)
+    assert entries["Error message"] == "connect to postgresql://[redacted]@db/reporting failed"
+    text = card.body[-1].text
+    assert 'File "site-packages/sqlalchemy/engine.py", line 10' in text
+    assert "OperationalError: boom" in text
+    assert "SELECT" not in text
+    assert "CUS-1234" not in text
+
+
+@pytest.mark.parametrize(
+    ("raw", "scrubbed"),
+    [
+        ("Authorization: Bearer eyJhbGciOi.secret", "Authorization: [redacted]"),
+        ("Authorization: Basic dXNlcjpodW50ZXIy", "Authorization: [redacted]"),
+        (
+            "boom\n[SQL: SELECT payload[0] FROM events WHERE id = %s]\ndone",
+            "boom\n[redacted]\ndone",
+        ),
+        ("password=hunter2 rejected", "password=[redacted] rejected"),
+        ("api_key: sk-live-123", "api_key: [redacted]"),
+        ('File "/Users/me/repo/backend/cli.py"', 'File "cli.py"'),
+        (
+            'File "/app/mpt_usage_reporting_extension/pipeline.py"',
+            'File "mpt_usage_reporting_extension/pipeline.py"',
+        ),
+        ("ValueError: no month selected", "ValueError: no month selected"),
+    ],
+)
+def test_sanitize_diagnostics_scrubs_secrets_and_paths(raw, scrubbed):
+    result = execution_notifier.sanitize_diagnostics(raw)  # act
+
+    assert result == scrubbed
+
+
 async def test_notify_failure_omits_stacktrace_section_when_empty(teams, execution):
     await execution_notifier.ExecutionNotifier(teams).notify_failure(
         execution, "completed with errors"

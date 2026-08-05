@@ -125,13 +125,11 @@ async def test_delete_product_dedupes_agreements(deleter, subscription_repo, sub
     subscription_repo.delete.assert_any_call(subscription_id="SUB-AGR-2")
 
 
-async def test_delete_wraps_upstream_error(deleter, subscriptions, caplog):
+async def test_delete_wraps_upstream_error(deleter, subscriptions):
     subscriptions.error = MPTError("boom")
 
     with pytest.raises(UpstreamSubscriptionError):
         await deleter.delete(ProductSelector("PRD-1"))
-
-    assert "Upstream error resolving agreement ids from subscriptions" in caplog.text
 
 
 async def test_delete_product_uses_product_query(deleter, subscriptions):

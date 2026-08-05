@@ -55,9 +55,6 @@ class ChargeStreamer:
                 charge.statement = statement
                 yield charge
         except MPTError as exc:
-            logger.warning(
-                "Upstream error streaming charges for statement %s: %s", statement.id, exc
-            )
             raise UpstreamStatementError(
                 f"Failed to stream charges for statement {statement.id}"
             ) from exc

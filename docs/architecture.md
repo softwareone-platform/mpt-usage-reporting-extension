@@ -129,6 +129,7 @@ The container image is built from the multi-stage `Dockerfile` and started via
 
 - [local-development.md](local-development.md) — local setup and run
 - [contributing.md](contributing.md) — development workflow and commands
+- [error-handling.md](error-handling.md) — exception hierarchy and runtime error flow
 - [testing.md](testing.md) — test strategy and execution
 - [deployment.md](deployment.md) — configuration and deployment model
 - [external-integrations.md](external-integrations.md) — external systems

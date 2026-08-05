@@ -1,5 +1,6 @@
 import pytest
 
+from mpt_usage_reporting_extension.exceptions import ConfigurationError
 from mpt_usage_reporting_extension.persistence.postgres.connection import ConnectionOptions
 
 
@@ -47,5 +48,5 @@ def test_repr_excludes_password():
 
 
 def test_from_dsn_unsupported_parameter_raises():
-    with pytest.raises(RuntimeError, match="application_name"):
+    with pytest.raises(ConfigurationError, match="application_name"):
         ConnectionOptions.from_dsn("postgresql://host/db?application_name=reporting")  # act

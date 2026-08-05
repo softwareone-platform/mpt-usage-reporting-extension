@@ -120,7 +120,7 @@ async def test_select_merges_duplicates_by_id(mocker, statements_api, window):
     assert len(statements) == 1
 
 
-async def test_select_wraps_upstream_error(statements_api, window, caplog):
+async def test_select_wraps_upstream_error(statements_api, window):
     api_service = statements_api()
     statements = api_service.client.billing.statements
     selected = statements.filter.return_value.select
@@ -131,8 +131,6 @@ async def test_select_wraps_upstream_error(statements_api, window, caplog):
 
     with pytest.raises(UpstreamStatementError):
         await StatementSelector(api_service).select(window, ("PRD-1",), "")
-
-    assert "Upstream error selecting" in caplog.text
 
 
 def test_filter_omits_window_when_none():

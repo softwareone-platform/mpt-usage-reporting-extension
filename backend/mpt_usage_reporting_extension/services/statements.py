@@ -128,9 +128,6 @@ class StatementSelector:
             async for statement in statements.filter(query).select(*_SELECT_FIELDS).iterate():
                 selected[statement.id] = statement
         except MPTError as exc:
-            logger.warning(
-                "Upstream error selecting %s statements by %s: %s", status, audit_field, exc
-            )
             raise UpstreamStatementError(
                 f"Failed to select {status} statements by {audit_field}"
             ) from exc
