@@ -67,7 +67,7 @@ secrets:
     name: MPT_TOOL_STORAGE_AIRTABLE_API_KEY
   postgresqlConnectionString:
     name: MPT_DATABASE_URL
-  SdkApplicationInsightsConnectionString:
+  applicationInsightsConnectionString:
     name: SDK_APPLICATIONINSIGHTS_CONNECTION_STRING
   SdkExtensionApiKey:
     name: SDK_EXTENSION_API_KEY
