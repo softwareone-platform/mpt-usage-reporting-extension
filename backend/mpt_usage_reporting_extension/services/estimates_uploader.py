@@ -4,7 +4,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Iterable, Iterator
 from dataclasses import dataclass
 from decimal import Decimal
 
-from mpt_api_client.exceptions import MPTError
+from mpt_api_client.exceptions import MPTAPIError
 from mpt_extension_sdk.observability import trace_span
 from mpt_extension_sdk.services.mpt_api_service.subscription import SubscriptionService
 from rich.console import Console
@@ -196,13 +196,24 @@ class PriceEstimateConsumer:
         """PUT the estimate and return the outcome; on any error log it and return a failure."""
         if self._dry_run:
             return UploadOutcome(subscription_id, estimate=estimate, dry_run=True)
+        payload = {"price": estimate.to_sales_dict()}
         try:
-            await self._subscriptions.update(subscription_id, {"price": estimate.to_dict()})
-        except MPTError as exc:
-            logger.exception("Failed to upload subscription %s", subscription_id)
+            await self._subscriptions.update(subscription_id, payload)
+        except MPTAPIError as exc:
+            logger.exception(
+                "MPT API rejected subscription %s upload with payload %s. \n Reason: %s \n %s",
+                subscription_id,
+                payload,
+                exc.title,
+                exc.detail,
+            )
             return UploadOutcome(subscription_id, failed=True, exception=exc, error=str(exc))
-        except Exception as exc:  # isolate this subscription's failure from the rest
-            logger.exception("Unexpected error uploading subscription %s", subscription_id)
+        except Exception as exc:
+            logger.exception(
+                "Unexpected error uploading subscription %s with payload %s",
+                subscription_id,
+                payload,
+            )
             return UploadOutcome(subscription_id, failed=True, exception=exc, error=str(exc))
         return UploadOutcome(subscription_id, estimate=estimate)
 
