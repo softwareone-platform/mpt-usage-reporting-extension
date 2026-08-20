@@ -62,8 +62,9 @@ any API work. Each stage is a service constructed with only the dependencies it 
 7. `EstimatesUploader` (`services/estimates_uploader.py`) computes each real subscription's
    estimate from PostgreSQL — current calendar-month `PPxM`/`SPxM` and trailing-12-month
    `PPxY`/`SPxY` sums, anchored on the previous (latest completed) calendar month — and
-   concurrently `PUT`s `{"price": {PPxM, SPxM, PPxY, SPxY}}` back to the subscription via the
-   MPT API, skipping synthetic (`agreement_additional_*`) and dateless buckets. It renders a
+   concurrently `PUT`s `{"price": {SPxM, SPxY}}` back to the subscription via the MPT API —
+   only the sales prices are sent; the platform recalculates the purchase prices — skipping
+   synthetic (`agreement_additional_*`) and dateless buckets. It renders a
    per-subscription report (values + `OK`/`FAILED`) with `[k/N]` progress and exits non-zero on
    any failure.
 
@@ -105,7 +106,7 @@ can serve the SDK's built-in endpoints.
 | `services/statements.py`, `services/charges.py` | Statement selection and charge streaming from the MPT API |
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
 | `services/charge_persistence.py`, `services/bucket_delete.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
-| `services/estimates_uploader.py` | `EstimatesUploader` — push `PPxM`/`SPxM`/`PPxY`/`SPxY` estimates to subscriptions, with a per-run report |
+| `services/estimates_uploader.py` | `EstimatesUploader` — push `SPxM`/`SPxY` estimates to subscriptions (purchase prices are recalculated by the platform), with a per-run report |
 | `services/execution_notifier.py` | `ExecutionNotifier` — report each `run`/`recalculate` execution to MS Teams (success with the run report, or failure with error and stacktrace); disabled when `MPT_MSTEAMS_WEBHOOK_URL` is unset |
 | `app.py` | Bare `ExtensionApp` served by `mpt-ext run` |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |

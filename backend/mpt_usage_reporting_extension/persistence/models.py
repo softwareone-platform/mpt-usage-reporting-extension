@@ -57,3 +57,10 @@ class PriceEstimate:
             "PPxY": float(self.ppxy),
             "SPxY": float(self.spxy),
         }
+
+    def to_sales_dict(self) -> dict[str, float]:
+        """Return only the sales prices (SPxM/SPxY); the platform recalculates the rest."""
+        return {
+            "SPxM": float(self.spxm),
+            "SPxY": float(self.spxy),
+        }

@@ -3,7 +3,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from mpt_api_client.exceptions import MPTError
+from mpt_api_client.exceptions import MPTAPIError
 
 from mpt_usage_reporting_extension.persistence.models import (
     PriceEstimate,
@@ -118,7 +118,7 @@ async def _astream(*subscription_ids):
 
 
 async def test_update_uploads_each_subscription(updater, update, year, month):
-    expected = {"price": {"PPxM": 1.0, "SPxM": 1.0, "PPxY": 1.0, "SPxY": 1.0}}
+    expected = {"price": {"SPxM": 1.0, "SPxY": 1.0}}
 
     await updater.update(["SUB-1", "SUB-2"], year, month)  # act
 
@@ -129,17 +129,13 @@ async def test_update_uploads_each_subscription(updater, update, year, month):
 async def test_update_accepts_a_lazy_iterator(updater, update, year, month):
     await updater.update(iter(["SUB-1"]), year, month)  # act
 
-    update.assert_called_once_with(
-        "SUB-1", {"price": {"PPxM": 1.0, "SPxM": 1.0, "PPxY": 1.0, "SPxY": 1.0}}
-    )
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 1.0, "SPxY": 1.0}})
 
 
 async def test_update_accepts_an_async_iterator(updater, update, year, month):
     await updater.update(_astream("SUB-1"), year, month)  # act
 
-    update.assert_called_once_with(
-        "SUB-1", {"price": {"PPxM": 1.0, "SPxM": 1.0, "PPxY": 1.0, "SPxY": 1.0}}
-    )
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 1.0, "SPxY": 1.0}})
 
 
 async def test_update_estimates_for_the_given_month(subscription_repo, updater, year, month):
@@ -156,22 +152,28 @@ async def test_update_does_nothing_when_empty(updater, update, year, month):
 
 
 async def test_update_report_flags_failure(mocker, updater, update, year, month, caplog):
-    update.side_effect = [MPTError("boom"), mocker.Mock()]
+    api_error = MPTAPIError(400, "boom", {"title": "Bad Request", "detail": "Value too large"})
+    update.side_effect = [api_error, mocker.Mock()]
 
     report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
 
     assert report.has_failures
     assert update.call_count == 2
-    assert "Failed to upload subscription SUB-1" in caplog.text
+    assert "MPT API rejected subscription SUB-1 upload" in caplog.text
+    assert "{'price': {'SPxM': 1.0, 'SPxY': 1.0}}" in caplog.text
+    assert "Reason: Bad Request \n Value too large" in caplog.text
 
 
-async def test_update_report_flags_unexpected_error(mocker, updater, update, year, month):
+async def test_update_report_flags_unexpected_error(mocker, updater, update, year, month, caplog):
     update.side_effect = [ValueError("boom"), mocker.Mock()]
 
     report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
 
     assert report.has_failures
     assert update.call_count == 2
+    assert "Unexpected error uploading subscription SUB-1" in caplog.text
+    assert ": boom" in caplog.text
+    assert "Traceback" in caplog.text
 
 
 def test_updatable_subscription_ids_filters(charge_accumulation_factory):
@@ -198,7 +200,7 @@ async def test_producer_yields_estimate_per_id(calculator, price_estimate, year,
 
 
 async def test_consumer_uploads_and_returns_success(subscriptions, update, price_estimate):
-    expected = {"price": {"PPxM": 1.0, "SPxM": 1.0, "PPxY": 1.0, "SPxY": 1.0}}
+    expected = {"price": {"SPxM": 1.0, "SPxY": 1.0}}
 
     outcome = await PriceEstimateConsumer(subscriptions).consume("SUB-1", price_estimate)  # act
 
@@ -207,12 +209,12 @@ async def test_consumer_uploads_and_returns_success(subscriptions, update, price
 
 
 async def test_consumer_returns_failure_on_error(subscriptions, update, price_estimate):
-    update.side_effect = MPTError("boom")
+    update.side_effect = MPTAPIError(400, "boom", {"title": "Bad Request", "detail": "boom"})
 
     outcome = await PriceEstimateConsumer(subscriptions).consume("SUB-1", price_estimate)  # act
 
     assert outcome == UploadOutcome(
-        "SUB-1", failed=True, exception=update.side_effect, error="boom"
+        "SUB-1", failed=True, exception=update.side_effect, error=str(update.side_effect)
     )
 
 
