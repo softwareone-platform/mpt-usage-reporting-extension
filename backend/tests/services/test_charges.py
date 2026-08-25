@@ -33,11 +33,6 @@ def charge_stream(api_service):
     return _charges(api_service).return_value.stream
 
 
-async def _aiter(records):  # noqa: RUF029  # async generator: enables `async for` over a list
-    for record in records:
-        yield record
-
-
 async def _aiter_raises(exc):  # noqa: RUF029  # async generator that raises before yielding
     raise exc
     yield  # noqa: WPS427  # pragma: no cover  # unreachable; only marks this as a generator
@@ -52,10 +47,12 @@ def _charges(api_service):
     return billing.statements.charges
 
 
-async def test_stream_calls_endpoint_per_statement(api_service, recorder, statement_factory):
+async def test_stream_calls_endpoint_per_statement(
+    api_service, recorder, statement_factory, aiter_records
+):
     statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
     stream = _charges(api_service).return_value.stream
-    stream.side_effect = [_aiter([]), _aiter([])]
+    stream.side_effect = [aiter_records([]), aiter_records([])]
 
     await _drain(ChargeStreamer(api_service, recorder).stream(statements))  # act
 
@@ -64,12 +61,12 @@ async def test_stream_calls_endpoint_per_statement(api_service, recorder, statem
 
 
 async def test_stream_attaches_statement_to_each_charge(
-    api_service, recorder, statement_factory, statement_charge_factory
+    api_service, recorder, statement_factory, statement_charge_factory, aiter_records
 ):
     statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
     pages = [[statement_charge_factory(), statement_charge_factory()], [statement_charge_factory()]]
     stream = _charges(api_service).return_value.stream
-    stream.side_effect = [_aiter(page) for page in pages]
+    stream.side_effect = [aiter_records(page) for page in pages]
 
     result = await _drain(ChargeStreamer(api_service, recorder).stream(statements))
 
@@ -77,22 +74,22 @@ async def test_stream_attaches_statement_to_each_charge(
 
 
 async def test_stream_yields_charge_objects(
-    api_service, recorder, statement_factory, statement_charge_factory
+    api_service, recorder, statement_factory, statement_charge_factory, aiter_records
 ):
     statements = [statement_factory("BILL-1")]
     charges = [statement_charge_factory(), statement_charge_factory()]
     stream = _charges(api_service).return_value.stream
-    stream.side_effect = [_aiter(charges)]
+    stream.side_effect = [aiter_records(charges)]
 
     result = await _drain(ChargeStreamer(api_service, recorder).stream(statements))
 
     assert result == charges
 
 
-def test_stream_is_lazy(api_service, recorder, statement_factory):
+def test_stream_is_lazy(api_service, recorder, statement_factory, aiter_records):
     statements = [statement_factory("BILL-1")]
     stream = _charges(api_service).return_value.stream
-    stream.side_effect = [_aiter([])]
+    stream.side_effect = [aiter_records([])]
 
     ChargeStreamer(api_service, recorder).stream(statements)  # act
 
@@ -101,10 +98,10 @@ def test_stream_is_lazy(api_service, recorder, statement_factory):
 
 
 async def test_stream_records_each_statement(
-    api_service, recorder, charge_stream, processing_repo, statement_factory
+    api_service, recorder, charge_stream, processing_repo, statement_factory, aiter_records
 ):
     statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
-    charge_stream.side_effect = [_aiter([]), _aiter([])]
+    charge_stream.side_effect = [aiter_records([]), aiter_records([])]
 
     await _drain(ChargeStreamer(api_service, recorder).stream(statements))  # act
 
@@ -140,7 +137,9 @@ async def test_stream_wraps_upstream_error(api_service, recorder, charge_stream,
         await _drain(ChargeStreamer(api_service, recorder).stream(statements))
 
 
-async def test_accumulate_sums_by_full_key(statement_charge_factory, statement_factory):
+async def test_accumulate_sums_by_full_key(
+    statement_charge_factory, statement_factory, aiter_records
+):
     june = statement_factory(issued="2026-06-01T10:00:00Z")
     july = statement_factory(issued="2026-07-01T10:00:00Z")
     charges = [
@@ -149,7 +148,7 @@ async def test_accumulate_sums_by_full_key(statement_charge_factory, statement_f
         statement_charge_factory("AGR-1", "SUB-1", statement=july, price=("3.00", "4.00")),
     ]
 
-    result = await ChargeAccumulator().accumulate(_aiter(charges))
+    result = await ChargeAccumulator().accumulate(aiter_records(charges))
 
     assert result.charge_count == 3
     june_bucket = result.accumulations["AGR-1", "SUB-1", 2026, 6]
@@ -158,8 +157,8 @@ async def test_accumulate_sums_by_full_key(statement_charge_factory, statement_f
     assert result.accumulations["AGR-1", "SUB-1", 2026, 7].ppx1 == Decimal("3.00")
 
 
-async def test_accumulate_handles_missing_fields(statement_charge_factory):
-    result = await ChargeAccumulator().accumulate(_aiter([statement_charge_factory()]))
+async def test_accumulate_handles_missing_fields(statement_charge_factory, aiter_records):
+    result = await ChargeAccumulator().accumulate(aiter_records([statement_charge_factory()]))
 
     assert result.charge_count == 1
     bucket = result.accumulations["-", "agreement_additional_-", 2026, 6]
@@ -167,46 +166,54 @@ async def test_accumulate_handles_missing_fields(statement_charge_factory):
     assert bucket.spx1 == Decimal(0)
 
 
-async def test_accumulate_labels_missing_subscription(statement_charge_factory, statement_factory):
+async def test_accumulate_labels_missing_subscription(
+    statement_charge_factory, statement_factory, aiter_records
+):
     statement = statement_factory(issued="2026-06-01T10:00:00Z")
     charge = statement_charge_factory("AGR-1", statement=statement, price=("1.00", "1.00"))
 
-    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+    result = await ChargeAccumulator().accumulate(aiter_records([charge]))
 
     assert ("AGR-1", "agreement_additional_AGR-1", 2026, 6) in result.accumulations
 
 
-async def test_accumulate_handles_unparseable_date(statement_charge_factory, statement_factory):
+async def test_accumulate_handles_unparseable_date(
+    statement_charge_factory, statement_factory, aiter_records
+):
     statement = statement_factory(issued="not-a-date")
     charge = statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00"))
 
-    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+    result = await ChargeAccumulator().accumulate(aiter_records([charge]))
 
     bucket = result.accumulations["AGR-1", "SUB-1", None, None]
     assert bucket.ppx1 == Decimal("1.00")
 
 
 async def test_accumulate_prefers_cancelled_over_issued(
-    statement_charge_factory, statement_factory
+    statement_charge_factory, statement_factory, aiter_records
 ):
     statement = statement_factory(issued="2026-06-01T10:00:00Z", cancelled="2026-07-01T10:00:00Z")
     charge = statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00"))
 
-    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+    result = await ChargeAccumulator().accumulate(aiter_records([charge]))
 
     assert ("AGR-1", "SUB-1", 2026, 7) in result.accumulations
 
 
-async def test_accumulate_falls_back_to_issued(statement_charge_factory, statement_factory):
+async def test_accumulate_falls_back_to_issued(
+    statement_charge_factory, statement_factory, aiter_records
+):
     statement = statement_factory(issued="2026-06-01T10:00:00Z")
     charge = statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00"))
 
-    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+    result = await ChargeAccumulator().accumulate(aiter_records([charge]))
 
     assert ("AGR-1", "SUB-1", 2026, 6) in result.accumulations
 
 
-async def test_accumulate_filters_by_charge_filter(statement_charge_factory, statement_factory):
+async def test_accumulate_filters_by_charge_filter(
+    statement_charge_factory, statement_factory, aiter_records
+):
     statement = statement_factory(issued="2026-06-01T10:00:00Z")
     charges = [
         statement_charge_factory("AGR-1", "SUB-1", statement=statement, price=("1.00", "1.00")),
@@ -214,7 +221,7 @@ async def test_accumulate_filters_by_charge_filter(statement_charge_factory, sta
     ]
 
     result = await ChargeAccumulator().accumulate(
-        _aiter(charges), StatementChargeFilter.for_subscriptions(("SUB-1",))
+        aiter_records(charges), StatementChargeFilter.for_subscriptions(("SUB-1",))
     )
 
     assert result.charge_count == 1

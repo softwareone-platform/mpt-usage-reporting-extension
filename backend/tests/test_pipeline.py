@@ -58,7 +58,7 @@ def selector(mocker):
 
 @pytest.fixture
 def deleter(mocker):
-    stub = mocker.patch.object(pipeline, "ScopeBucketDeleter").return_value
+    stub = mocker.patch.object(pipeline, "ScopeBucketDeleter").build.return_value
     stub.delete = mocker.AsyncMock(return_value=DeleteOutcome())
     return stub
 

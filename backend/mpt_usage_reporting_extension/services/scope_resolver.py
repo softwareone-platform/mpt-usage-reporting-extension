@@ -6,16 +6,12 @@ from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsSe
 
 from mpt_usage_reporting_extension.exceptions import UpstreamSubscriptionError
 from mpt_usage_reporting_extension.persistence.protocols import SubscriptionAccumulationRepository
-from mpt_usage_reporting_extension.selectors import ProductSelector, SellerSelector
-
-_PRODUCT_ID = "product.id"
-_SELLER_ID = "seller.id"
 
 
 class ScopeResolver:
     """Resolve selector scopes to the target ids their operations act on.
 
-    Owns the commerce-API lookup expanding a product/seller scope into agreement ids and
+    Owns the commerce-API lookup expanding a subscriptions query into agreement ids and
     the stored-agreement lookup for a subscription scope; callers act on the resolved ids.
     """
 
@@ -26,12 +22,6 @@ class ScopeResolver:
     ) -> None:
         self._subscriptions = subscriptions
         self._subscription_repo = subscription_repo
-
-    def query_for(self, scope: ProductSelector | SellerSelector) -> RQLQuery:
-        """Build the commerce subscriptions query matching the scope."""
-        if isinstance(scope, ProductSelector):
-            return RQLQuery().n(_PRODUCT_ID).eq(scope.product_id)
-        return RQLQuery().n(_SELLER_ID).eq(scope.seller_id)
 
     def subscription_agreements(self, subscription_id: str) -> AsyncIterator[str]:
         """Stream the stored agreement ids of one subscription."""

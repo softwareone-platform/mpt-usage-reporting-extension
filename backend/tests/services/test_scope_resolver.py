@@ -6,7 +6,6 @@ from mpt_api_client import RQLQuery
 from mpt_api_client.exceptions import MPTError
 
 from mpt_usage_reporting_extension.exceptions import UpstreamSubscriptionError
-from mpt_usage_reporting_extension.selectors import ProductSelector, SellerSelector
 from mpt_usage_reporting_extension.services.scope_resolver import ScopeResolver
 
 
@@ -33,21 +32,16 @@ class _StubSubscriptions:
             yield SimpleNamespace(agreement=agreement)
 
 
-async def _aiter(records):  # ruff: ignore[RUF029]  # async generator: enables `async for` over a list
-    for record in records:
-        yield record
-
-
 @pytest.fixture
 def subscriptions():
     return _StubSubscriptions()
 
 
 @pytest.fixture
-def subscription_repo(mocker):
+def subscription_repo(mocker, aiter_records):
     repo = mocker.AsyncMock()
     repo.agreements_by_subscription = mocker.Mock(
-        side_effect=lambda subscription_id: _aiter(["AGR-1"])
+        side_effect=lambda subscription_id: aiter_records(["AGR-1"])
     )
     return repo
 
@@ -55,22 +49,6 @@ def subscription_repo(mocker):
 @pytest.fixture
 def resolver(subscriptions, subscription_repo):
     return ScopeResolver(cast(Any, subscriptions), subscription_repo)
-
-
-def test_query_for_product_scope(resolver):
-    expected = RQLQuery().n("product.id").eq("PRD-1")
-
-    result = resolver.query_for(ProductSelector("PRD-1"))
-
-    assert str(result) == str(expected)
-
-
-def test_query_for_seller_scope(resolver):
-    expected = RQLQuery().n("seller.id").eq("SEL-1")
-
-    result = resolver.query_for(SellerSelector("SEL-1"))
-
-    assert str(result) == str(expected)
 
 
 async def test_agreement_ids_dedupes_and_skips_missing(resolver, subscriptions):

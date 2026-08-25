@@ -13,11 +13,6 @@ from mpt_usage_reporting_extension.services.statements import (
 from mpt_usage_reporting_extension.window import RunWindow
 
 
-async def _aiter(records):  # noqa: RUF029  # async generator: enables `async for` over a list
-    for record in records:
-        yield record
-
-
 async def _aiter_raises(exc):  # noqa: RUF029  # async generator that raises before yielding
     raise exc
     yield  # noqa: WPS427  # pragma: no cover  # unreachable; only marks this as a generator
@@ -37,14 +32,14 @@ def window():
 
 
 @pytest.fixture
-def statements_api(mocker):
+def statements_api(mocker, aiter_records):
     def factory(pages=None):
         if pages is None:
             pages = [[], []]
         api_service = mocker.Mock()
         service = api_service.client.billing.statements
         filtered = service.filter.return_value
-        filtered.select.return_value.iterate.side_effect = [_aiter(page) for page in pages]
+        filtered.select.return_value.iterate.side_effect = [aiter_records(page) for page in pages]
         return api_service
 
     return factory

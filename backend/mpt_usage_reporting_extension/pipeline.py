@@ -23,7 +23,7 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 )
 from mpt_usage_reporting_extension.selectors import ProductSelector, Selector, SubscriptionSelector
 from mpt_usage_reporting_extension.services.accumulation_cleanup import AccumulationCleaner
-from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter, ScopeBucketDeleter
+from mpt_usage_reporting_extension.services.bucket_delete import ScopeBucketDeleter
 from mpt_usage_reporting_extension.services.charge_persistence import AccumulationPersister
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
@@ -41,7 +41,6 @@ from mpt_usage_reporting_extension.services.execution_tracker import (
     ExecutionTracker,
     StatementProcessingRecorder,
 )
-from mpt_usage_reporting_extension.services.scope_resolver import ScopeResolver
 from mpt_usage_reporting_extension.services.statements import StatementReport, StatementSelector
 from mpt_usage_reporting_extension.types import Command, Month
 from mpt_usage_reporting_extension.utils import last_month
@@ -130,17 +129,8 @@ class UsageReportingPipeline:  # noqa: WPS214
         reset scopes are unioned into one outcome.
         """
         api_service = self._ctx.api_service
-        resolver = ScopeResolver(
-            api_service.client.commerce.subscriptions, db.subscription_repository()
-        )
-        deleter = ScopeBucketDeleter(
-            BucketDeleter(
-                db.subscription_repository(),
-                db.agreement_repository(),
-                resolver,
-                dry_run=dry_run,
-            ),
-            resolver,
+        deleter = ScopeBucketDeleter.build(
+            db, api_service.client.commerce.subscriptions, dry_run=dry_run
         )
         if scope is not None:
             reset = await deleter.delete(scope)

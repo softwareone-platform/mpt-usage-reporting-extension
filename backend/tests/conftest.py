@@ -209,3 +209,14 @@ def charge_totals_factory():
         return ChargeTotals(charge_count=len(buckets), accumulations=accumulations)
 
     return factory
+
+
+@pytest.fixture
+def aiter_records():
+    """Wrap a list in an async iterator, so mocks can feed `async for` consumers."""
+
+    async def _aiter(records):  # ruff: ignore[RUF029]  # async generator: enables `async for` over a list
+        for record in records:
+            yield record
+
+    return _aiter

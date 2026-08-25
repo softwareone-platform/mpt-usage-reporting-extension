@@ -43,26 +43,23 @@ class _StubSubscriptions:
             yield SimpleNamespace(agreement=agreement)
 
 
-async def _aiter(records):  # noqa: RUF029  # async generator: enables `async for` over a list
-    for record in records:
-        yield record
-
-
 @pytest.fixture
 def subscriptions():
     return _StubSubscriptions()
 
 
 @pytest.fixture
-def subscription_repo(mocker):
+def subscription_repo(mocker, aiter_records):
     repo = mocker.AsyncMock()
     repo.delete.return_value = 1
     # the subscription's stored agreement(s), read before deletion to narrow statement selection
     repo.stored_agreements = ["AGR-1"]
     repo.agreements_by_subscription = mocker.Mock(
-        side_effect=lambda subscription_id: _aiter(repo.stored_agreements)
+        side_effect=lambda subscription_id: aiter_records(repo.stored_agreements)
     )
-    repo.subscriptions_by_agreement = mocker.Mock(side_effect=lambda agreement_id=None: _aiter([]))
+    repo.subscriptions_by_agreement = mocker.Mock(
+        side_effect=lambda agreement_id=None: aiter_records([])
+    )
     return repo
 
 
@@ -84,8 +81,8 @@ def deleter(subscription_repo, agreement_repo, resolver):
 
 
 @pytest.fixture
-def scope_deleter(deleter, resolver):
-    return ScopeBucketDeleter(deleter, resolver)
+def scope_deleter(deleter):
+    return ScopeBucketDeleter(deleter)
 
 
 async def test_delete_subscription_leaves_agreement(
@@ -116,11 +113,11 @@ async def test_delete_subscription_reads_agreements_before_delete(scope_deleter,
 
 
 async def test_delete_agreement_clears_both_tables(
-    scope_deleter, subscription_repo, agreement_repo
+    scope_deleter, subscription_repo, agreement_repo, aiter_records
 ):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
-        "SUB-1"
-    ])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records(["SUB-1"])
+    )
     result = await scope_deleter.delete(AgreementSelector("AGR-1"))
 
     assert result == DeleteOutcome(
@@ -133,10 +130,12 @@ async def test_delete_agreement_clears_both_tables(
     agreement_repo.delete.assert_awaited_once_with(agreement_id="AGR-1")
 
 
-async def test_delete_product_dedupes_agreements(scope_deleter, subscription_repo, subscriptions):
+async def test_delete_product_dedupes_agreements(
+    scope_deleter, subscription_repo, subscriptions, aiter_records
+):
     subscriptions.agreements = ["AGR-1", "AGR-1", "AGR-2"]
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter(
-        [f"SUB-{agreement_id}"] if agreement_id else []
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records([f"SUB-{agreement_id}"] if agreement_id else [])
     )
 
     result = await scope_deleter.delete(ProductSelector("PRD-1"))
@@ -176,11 +175,13 @@ async def test_delete_seller_uses_seller_query(scope_deleter, subscriptions):
     assert str(subscriptions.query) == str(expected)
 
 
-async def test_delete_skips_missing_agreement(scope_deleter, subscription_repo, subscriptions):
+async def test_delete_skips_missing_agreement(
+    scope_deleter, subscription_repo, subscriptions, aiter_records
+):
     subscriptions.agreements = [None, "AGR-1"]
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
-        "SUB-1"
-    ])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records(["SUB-1"])
+    )
 
     result = await scope_deleter.delete(ProductSelector("PRD-1"))
 
@@ -193,10 +194,12 @@ async def test_delete_skips_missing_agreement(scope_deleter, subscription_repo, 
 
 
 async def test_delete_product_zero_delete_registers_statement_agreements(
-    scope_deleter, subscription_repo, agreement_repo, subscriptions
+    scope_deleter, subscription_repo, agreement_repo, subscriptions, aiter_records
 ):
     subscriptions.agreements = ["AGR-1"]
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records([])
+    )
     agreement_repo.delete.return_value = 0
 
     result = await scope_deleter.delete(ProductSelector("PRD-1"))
@@ -208,9 +211,11 @@ async def test_delete_product_zero_delete_registers_statement_agreements(
 
 
 async def test_delete_agreement_zero_delete_registers_statement_agreement(
-    scope_deleter, subscription_repo, agreement_repo
+    scope_deleter, subscription_repo, agreement_repo, aiter_records
 ):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records([])
+    )
     agreement_repo.delete.return_value = 0
 
     result = await scope_deleter.delete(AgreementSelector("AGR-9"))
@@ -230,10 +235,12 @@ async def test_delete_subscription_zero_delete_returns_empty_outcome(
     assert result.statement_agreements == frozenset()
 
 
-async def test_delete_none_clears_everything(scope_deleter, subscription_repo, agreement_repo):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
-        "SUB-1"
-    ])
+async def test_delete_none_clears_everything(
+    scope_deleter, subscription_repo, agreement_repo, aiter_records
+):
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records(["SUB-1"])
+    )
     result = await scope_deleter.delete(None)
 
     assert result == DeleteOutcome(subscriptions=["SUB-1"])
@@ -241,10 +248,10 @@ async def test_delete_none_clears_everything(scope_deleter, subscription_repo, a
     agreement_repo.delete.assert_awaited_once_with()
 
 
-async def test_delete_reports_the_summary(scope_deleter, subscription_repo, caplog):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
-        "SUB-1"
-    ])
+async def test_delete_reports_the_summary(scope_deleter, subscription_repo, aiter_records, caplog):
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records(["SUB-1"])
+    )
 
     caplog.set_level("INFO")
     await scope_deleter.delete(AgreementSelector("AGR-1"))  # act
@@ -255,9 +262,11 @@ async def test_delete_reports_the_summary(scope_deleter, subscription_repo, capl
 
 
 async def test_delete_agreement_without_subscriptions_keeps_agreement_reset_target(
-    scope_deleter, subscription_repo, agreement_repo
+    scope_deleter, subscription_repo, agreement_repo, aiter_records
 ):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records([])
+    )
     agreement_repo.delete.return_value = 1
 
     result = await scope_deleter.delete(AgreementSelector("AGR-9"))
@@ -265,36 +274,54 @@ async def test_delete_agreement_without_subscriptions_keeps_agreement_reset_targ
     assert result == DeleteOutcome(agreements=["AGR-9"], statement_agreements=frozenset(("AGR-9",)))
 
 
-async def test_delete_scope_routes_each_selector_to_its_action(mocker, resolver):
-    action_deleter = mocker.AsyncMock()
-    scope_deleter = ScopeBucketDeleter(action_deleter, resolver)
-    action_deleter.delete_subscription.return_value = DeleteOutcome()
-    action_deleter.delete_agreement.return_value = DeleteOutcome()
-    action_deleter.delete_agreements_by_query.return_value = DeleteOutcome()
-    action_deleter.delete_all.return_value = DeleteOutcome()
-
-    await scope_deleter.delete(SubscriptionSelector("SUB-1"))
-    await scope_deleter.delete(AgreementSelector("AGR-1"))
-    await scope_deleter.delete(ProductSelector("PRD-1"))
-    await scope_deleter.delete(None)  # act
-
-    action_deleter.delete_subscription.assert_awaited_once_with("SUB-1")
-    action_deleter.delete_agreement.assert_awaited_once_with("AGR-1")
-    action_deleter.delete_agreements_by_query.assert_awaited_once()
-    action_deleter.delete_all.assert_awaited_once_with()
-
-
-async def test_delete_subscription_dry_run_skips_delete_calls(
-    subscription_repo, agreement_repo, resolver
+@pytest.mark.parametrize(
+    ("scope", "action", "expected_args"),
+    [
+        (SubscriptionSelector("SUB-1"), "delete_subscription", ("SUB-1",)),
+        (AgreementSelector("AGR-1"), "delete_agreement", ("AGR-1",)),
+        (ProductSelector("PRD-1"), "delete_agreements_by_product", ("PRD-1",)),
+        (SellerSelector("SEL-1"), "delete_agreements_by_seller", ("SEL-1",)),
+        (None, "delete_all", ()),
+    ],
+)
+async def test_delete_scope_routes_each_selector_to_its_action(
+    mocker, scope, action, expected_args
 ):
-    subscription_repo.stored_agreements = ["AGR-1"]
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
-        "SUB-1"
-    ])
-    scope_deleter = ScopeBucketDeleter(
-        BucketDeleter(subscription_repo, agreement_repo, resolver, dry_run=True),
-        resolver,
+    action_deleter = mocker.AsyncMock()
+    getattr(action_deleter, action).return_value = DeleteOutcome()
+    scope_deleter = ScopeBucketDeleter(action_deleter)
+
+    await scope_deleter.delete(scope)  # act
+
+    getattr(action_deleter, action).assert_awaited_once_with(*expected_args)
+
+
+async def test_build_wires_the_deleter_over_the_database(
+    mocker, subscription_repo, agreement_repo, subscriptions
+):
+    db = mocker.Mock()
+    db.subscription_repository.return_value = subscription_repo
+    db.agreement_repository.return_value = agreement_repo
+
+    scope_deleter = ScopeBucketDeleter.build(db, cast(Any, subscriptions))
+    result = await scope_deleter.delete(SubscriptionSelector("SUB-1"))
+
+    assert result == DeleteOutcome(
+        subscriptions=["SUB-1"], statement_agreements=frozenset(("AGR-1",))
     )
+    subscription_repo.delete.assert_awaited_once_with(subscription_id="SUB-1")
+
+
+async def test_build_dry_run_skips_delete_calls(
+    mocker, subscription_repo, agreement_repo, subscriptions, aiter_records
+):
+    db = mocker.Mock()
+    db.subscription_repository.return_value = subscription_repo
+    db.agreement_repository.return_value = agreement_repo
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records(["SUB-1"])
+    )
+    scope_deleter = ScopeBucketDeleter.build(db, cast(Any, subscriptions), dry_run=True)
 
     result = await scope_deleter.delete(SubscriptionSelector("SUB-1"))
 
@@ -305,13 +332,14 @@ async def test_delete_subscription_dry_run_skips_delete_calls(
     agreement_repo.delete.assert_not_called()
 
 
-async def test_delete_none_dry_run_skips_delete_calls(subscription_repo, agreement_repo, resolver):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
-        "SUB-1"
-    ])
+async def test_delete_none_dry_run_skips_delete_calls(
+    subscription_repo, agreement_repo, resolver, aiter_records
+):
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records(["SUB-1"])
+    )
     scope_deleter = ScopeBucketDeleter(
-        BucketDeleter(subscription_repo, agreement_repo, resolver, dry_run=True),
-        resolver,
+        BucketDeleter(subscription_repo, agreement_repo, resolver, dry_run=True)
     )
 
     result = await scope_deleter.delete(None)
@@ -322,14 +350,13 @@ async def test_delete_none_dry_run_skips_delete_calls(subscription_repo, agreeme
 
 
 async def test_delete_agreement_dry_run_uses_scope_without_writes(
-    subscription_repo, agreement_repo, resolver
+    subscription_repo, agreement_repo, resolver, aiter_records
 ):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
-        "SUB-1"
-    ])
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: (
+        aiter_records(["SUB-1"])
+    )
     scope_deleter = ScopeBucketDeleter(
-        BucketDeleter(subscription_repo, agreement_repo, resolver, dry_run=True),
-        resolver,
+        BucketDeleter(subscription_repo, agreement_repo, resolver, dry_run=True)
     )
 
     result = await scope_deleter.delete(AgreementSelector("AGR-1"))

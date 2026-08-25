@@ -3,10 +3,12 @@ from collections.abc import AsyncIterator
 from typing import override
 
 from mpt_api_client import RQLQuery
+from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
 from mpt_extension_sdk.observability import trace_span
 
 from mpt_usage_reporting_extension.persistence.protocols import (
     AgreementAccumulationRepository,
+    Database,
     SubscriptionAccumulationRepository,
 )
 from mpt_usage_reporting_extension.selectors import (
@@ -19,6 +21,9 @@ from mpt_usage_reporting_extension.selectors import (
 from mpt_usage_reporting_extension.services.scope_resolver import ScopeResolver
 
 logger = logging.getLogger(__name__)
+
+_PRODUCT_ID = "product.id"
+_SELLER_ID = "seller.id"
 
 
 class DeleteOutcome:
@@ -103,7 +108,7 @@ class DeleteReport:
         return f"Deleted {total} bucket(s) ({subscriptions} subscription, {agreements} agreement)"
 
 
-class BucketDeleter:
+class BucketDeleter:  # noqa: WPS214  # one public delete action per target kind
     """Delete stored accumulation buckets, one delete action per target kind.
 
     Product and seller scopes are resolved to their agreement ids through the scope
@@ -173,10 +178,31 @@ class BucketDeleter:
         )
 
     @trace_span(
-        "usage_reporting.delete_agreements_by_query",
-        attributes={"usage_reporting.query": lambda deleter, query: str(query)},
+        "usage_reporting.delete_agreements_by_product",
+        attributes={"usage_reporting.product_id": lambda deleter, product_id: product_id},
     )
-    async def delete_agreements_by_query(self, query: RQLQuery) -> DeleteOutcome:
+    async def delete_agreements_by_product(self, product_id: str) -> DeleteOutcome:
+        """Delete the buckets of every agreement with a subscription of the product."""
+        return await self._delete_agreements_by_query(RQLQuery().n(_PRODUCT_ID).eq(product_id))
+
+    @trace_span(
+        "usage_reporting.delete_agreements_by_seller",
+        attributes={"usage_reporting.seller_id": lambda deleter, seller_id: seller_id},
+    )
+    async def delete_agreements_by_seller(self, seller_id: str) -> DeleteOutcome:
+        """Delete the buckets of every agreement with a subscription of the seller."""
+        return await self._delete_agreements_by_query(RQLQuery().n(_SELLER_ID).eq(seller_id))
+
+    async def delete_all(self) -> DeleteOutcome:
+        """Delete every stored bucket in both tables."""
+        outcome = await DeleteOutcome.from_subscriptions(
+            self._delete_subscription_ids(self._subscription_repo.subscriptions_by_agreement())
+        )
+        if not self._dry_run:
+            await self._agreement_repo.delete()
+        return outcome
+
+    async def _delete_agreements_by_query(self, query: RQLQuery) -> DeleteOutcome:
         """Delete the buckets of every agreement whose subscriptions match the query."""
         subscriptions: list[str] = []
         agreements: list[str] = []
@@ -191,15 +217,6 @@ class BucketDeleter:
             agreements=agreements,
             statement_agreements=frozenset(statement_agreements),
         )
-
-    async def delete_all(self) -> DeleteOutcome:
-        """Delete every stored bucket in both tables."""
-        outcome = await DeleteOutcome.from_subscriptions(
-            self._delete_subscription_ids(self._subscription_repo.subscriptions_by_agreement())
-        )
-        if not self._dry_run:
-            await self._agreement_repo.delete()
-        return outcome
 
     async def _delete_subscription_ids(
         self, subscriptions: AsyncIterator[str]
@@ -224,9 +241,28 @@ class ScopeBucketDeleter:
     scope deletes every bucket in both tables.
     """
 
-    def __init__(self, deleter: BucketDeleter, resolver: ScopeResolver) -> None:
+    def __init__(self, deleter: BucketDeleter) -> None:
         self._deleter = deleter
-        self._resolver = resolver
+
+    @classmethod
+    def build(
+        cls,
+        db: Database,
+        subscriptions: AsyncSubscriptionsService,
+        *,
+        dry_run: bool = False,
+    ) -> "ScopeBucketDeleter":
+        """Wire a scope deleter over the database, sharing one resolver."""
+        subscription_repo = db.subscription_repository()
+        resolver = ScopeResolver(subscriptions, subscription_repo)
+        return cls(
+            BucketDeleter(
+                subscription_repo,
+                db.agreement_repository(),
+                resolver,
+                dry_run=dry_run,
+            )
+        )
 
     @trace_span(
         "usage_reporting.delete_buckets",
@@ -251,8 +287,8 @@ class ScopeBucketDeleter:
                 outcome = await self._deleter.delete_subscription(subscription_id)
             case AgreementSelector(agreement_id):
                 outcome = await self._deleter.delete_agreement(agreement_id)
-            case ProductSelector() | SellerSelector():
-                outcome = await self._deleter.delete_agreements_by_query(
-                    self._resolver.query_for(scope)
-                )
+            case ProductSelector(product_id):
+                outcome = await self._deleter.delete_agreements_by_product(product_id)
+            case SellerSelector(seller_id):
+                outcome = await self._deleter.delete_agreements_by_seller(seller_id)
         return outcome

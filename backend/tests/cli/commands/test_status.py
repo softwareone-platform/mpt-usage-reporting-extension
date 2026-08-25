@@ -4,11 +4,6 @@ from mpt_usage_reporting_extension import cli
 from mpt_usage_reporting_extension.persistence.models import ExecutionRecord
 
 
-async def _aiter(records):  # noqa: RUF029  # async generator: enables `async for` over a list
-    for record in records:
-        yield record
-
-
 @pytest.fixture
 def stub_database(mocker):
     database = mocker.MagicMock()
@@ -19,10 +14,10 @@ def stub_database(mocker):
     return database
 
 
-def test_status_prints_recent_executions(mocker, runner, stub_database):
+def test_status_prints_recent_executions(mocker, runner, stub_database, aiter_records):
     record = ExecutionRecord("run", "success", "2026-06-01T00:00:00Z", "2026-06-01T00:01:00Z")
     repo = mocker.Mock()
-    repo.recent = mocker.Mock(return_value=_aiter([record]))
+    repo.recent = mocker.Mock(return_value=aiter_records([record]))
     stub_database.execution_repository = mocker.Mock(return_value=repo)
 
     result = runner.invoke(cli.app, ["status"])
@@ -31,9 +26,9 @@ def test_status_prints_recent_executions(mocker, runner, stub_database):
     assert "run" in result.output
 
 
-def test_status_passes_limit(mocker, runner, stub_database):
+def test_status_passes_limit(mocker, runner, stub_database, aiter_records):
     repo = mocker.Mock()
-    repo.recent = mocker.Mock(return_value=_aiter([]))
+    repo.recent = mocker.Mock(return_value=aiter_records([]))
     stub_database.execution_repository = mocker.Mock(return_value=repo)
 
     result = runner.invoke(cli.app, ["status", "--limit", "3"])
@@ -42,9 +37,9 @@ def test_status_passes_limit(mocker, runner, stub_database):
     repo.recent.assert_called_once_with(3)
 
 
-def test_status_rejects_non_positive_limit(mocker, runner, stub_database):
+def test_status_rejects_non_positive_limit(mocker, runner, stub_database, aiter_records):
     repo = mocker.Mock()
-    repo.recent = mocker.Mock(return_value=_aiter([]))
+    repo.recent = mocker.Mock(return_value=aiter_records([]))
     stub_database.execution_repository = mocker.Mock(return_value=repo)
 
     result = runner.invoke(cli.app, ["status", "--limit", "0"])
