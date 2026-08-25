@@ -134,18 +134,24 @@ class _EstimateCalculator:
 
         Each month in the window is read with an indexed point lookup; absent months are skipped.
         The anchor month drives PPxM/SPxM; the whole window drives PPxY/SPxY. An empty window
-        yields an all-zero estimate.
+        yields an all-zero estimate. Credits can push a sum below zero, which MPT rejects, so
+        each price is floored at 0.
         """
         anchor = (year, month)
         window = await self._fetch_window(subscription_id, year, month)
         rows = [bucket for bucket in window if bucket]
         monthly = [bucket for bucket in rows if (bucket.year, bucket.month) == anchor]
         return PriceEstimate(
-            ppxm=sum((bucket.ppx1 for bucket in monthly), Decimal(0)),
-            spxm=sum((bucket.spx1 for bucket in monthly), Decimal(0)),
-            ppxy=sum((bucket.ppx1 for bucket in rows), Decimal(0)),
-            spxy=sum((bucket.spx1 for bucket in rows), Decimal(0)),
+            ppxm=self._non_negative_sum(bucket.ppx1 for bucket in monthly),
+            spxm=self._non_negative_sum(bucket.spx1 for bucket in monthly),
+            ppxy=self._non_negative_sum(bucket.ppx1 for bucket in rows),
+            spxy=self._non_negative_sum(bucket.spx1 for bucket in rows),
         )
+
+    @staticmethod
+    def _non_negative_sum(amounts: Iterable[Decimal]) -> Decimal:  # noqa: WPS602
+        """Sum the amounts, flooring the total at 0."""
+        return max(sum(amounts, Decimal(0)), Decimal(0))
 
     async def _fetch_window(
         self, subscription_id: str, year: Year, month: Month

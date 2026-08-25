@@ -144,6 +144,50 @@ async def test_update_estimates_for_the_given_month(subscription_repo, updater, 
     subscription_repo.get.assert_any_await("SUB-1", year, month)
 
 
+def _bucket(year, month, ppx1, spx1):
+    return SubscriptionMonthlyAccumulation(
+        subscription_id="SUB",
+        agreement_id="AGR",
+        year=year,
+        month=month,
+        ppx1=Decimal(ppx1),
+        spx1=Decimal(spx1),
+        updated_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+    )
+
+
+async def test_update_clamps_negative_estimates_to_zero(
+    mocker, subscriptions, update, year, month, capsys
+):
+    negative_bucket = _bucket(year, month, ppx1="-0.25", spx1="-0.0001932354")
+    window = {(year, month): negative_bucket}
+    repo = mocker.AsyncMock()
+    repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
+    updater = EstimatesUploader(repo, subscriptions)
+
+    report = await updater.update(["SUB-1"], year, month)  # act
+
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 0, "SPxY": 0}})
+    assert "PPxM=0.0000 SPxM=0.0000 PPxY=0.0000 SPxY=0.0000" in capsys.readouterr().out
+    assert not report.has_failures
+
+
+async def test_update_clamps_each_price_independently(
+    mocker, subscriptions, update, year, month, capsys
+):
+    anchor_bucket = _bucket(year, month, ppx1=4, spx1=-1)
+    earlier_bucket = _bucket(year, Month.MAY, ppx1=-6, spx1=3)
+    window = {(year, month): anchor_bucket, (year, Month.MAY): earlier_bucket}
+    repo = mocker.AsyncMock()
+    repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
+    updater = EstimatesUploader(repo, subscriptions)
+
+    await updater.update(["SUB-1"], year, month)  # act
+
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 0, "SPxY": 2.0}})
+    assert "PPxM=4.0000 SPxM=0.0000 PPxY=0.0000 SPxY=2.0000" in capsys.readouterr().out
+
+
 async def test_update_does_nothing_when_empty(updater, update, year, month):
     report = await updater.update([], year, month)  # act
 
