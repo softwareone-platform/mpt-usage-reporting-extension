@@ -186,6 +186,38 @@ async def test_accumulate_handles_unparseable_date(statement_charge_factory, sta
     assert bucket.ppx1 == Decimal("1.00")
 
 
+async def test_accumulate_prefers_charge_period_end_over_statement_dates(
+    statement_charge_factory, statement_factory
+):
+    statement = statement_factory(issued="2026-08-15T10:00:00Z", cancelled="2026-09-01T10:00:00Z")
+    charge = statement_charge_factory(
+        "AGR-1",
+        "SUB-1",
+        statement=statement,
+        price=("1.00", "1.00"),
+        period_end="2026-07-31T23:59:59Z",
+    )
+
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+
+    assert ("AGR-1", "SUB-1", 2026, 7) in result.accumulations
+
+
+async def test_accumulate_parses_offset_period_end(statement_charge_factory, statement_factory):
+    statement = statement_factory(issued="2026-08-15T10:00:00Z")
+    charge = statement_charge_factory(
+        "AGR-1",
+        "SUB-1",
+        statement=statement,
+        price=("1.00", "1.00"),
+        period_end="2025-01-31T23:59:59.0000000+00:00",
+    )
+
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+
+    assert ("AGR-1", "SUB-1", 2025, 1) in result.accumulations
+
+
 async def test_accumulate_prefers_cancelled_over_issued(
     statement_charge_factory, statement_factory
 ):

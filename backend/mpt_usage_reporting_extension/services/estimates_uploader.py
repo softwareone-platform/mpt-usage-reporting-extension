@@ -65,9 +65,15 @@ class UploadOutcome:
             detail = f": {self.error}" if self.error else ""
             return f"{self.subscription_id} FAILED{detail}"
         prices = self.estimate.to_dict()
-        body = " ".join(f"{key}={prices[key]:.4f}" for key in _PRICE_KEYS)
+        labels = (f"{key}={self._price_label(prices[key])}" for key in _PRICE_KEYS)
+        body = " ".join(labels)
         status = "DRY-RUN" if self.dry_run else "OK"
         return f"{self.subscription_id} {body} {status}"
+
+    @staticmethod
+    def _price_label(amount: float | None) -> str:  # noqa: WPS602
+        """Render one price for the console line, showing absent figures as ``null``."""
+        return "null" if amount is None else f"{amount:.4f}"
 
 
 class EstimateUploadReport:
@@ -133,19 +139,20 @@ class _EstimateCalculator:
         """Fold the trailing-12-month buckets into a PriceEstimate.
 
         Each month in the window is read with an indexed point lookup; absent months are skipped.
-        The anchor month drives PPxM/SPxM; the whole window drives PPxY/SPxY. An empty window
-        yields an all-zero estimate. Credits can push a sum below zero, which MPT rejects, so
-        each price is floored at 0.
+        The anchor month drives PPxM/SPxM; the whole window drives PPxY/SPxY. A figure with no
+        backing buckets is None (uploaded as null), never a fabricated zero: an empty anchor
+        month yields null monthly figures and an empty window an all-null estimate. Credits can
+        push a sum below zero, which MPT rejects, so each present price is floored at 0.
         """
         anchor = (year, month)
         window = await self._fetch_window(subscription_id, year, month)
         rows = [bucket for bucket in window if bucket]
         monthly = [bucket for bucket in rows if (bucket.year, bucket.month) == anchor]
         return PriceEstimate(
-            ppxm=self._non_negative_sum(bucket.ppx1 for bucket in monthly),
-            spxm=self._non_negative_sum(bucket.spx1 for bucket in monthly),
-            ppxy=self._non_negative_sum(bucket.ppx1 for bucket in rows),
-            spxy=self._non_negative_sum(bucket.spx1 for bucket in rows),
+            ppxm=self._non_negative_sum(bucket.ppx1 for bucket in monthly) if monthly else None,
+            spxm=self._non_negative_sum(bucket.spx1 for bucket in monthly) if monthly else None,
+            ppxy=self._non_negative_sum(bucket.ppx1 for bucket in rows) if rows else None,
+            spxy=self._non_negative_sum(bucket.spx1 for bucket in rows) if rows else None,
         )
 
     @staticmethod

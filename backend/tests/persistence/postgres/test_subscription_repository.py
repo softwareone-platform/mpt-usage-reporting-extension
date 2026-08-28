@@ -141,13 +141,13 @@ async def test_monthly_estimate_ignores_other_months(
     assert result.ppxm == decimal_second
 
 
-async def test_monthly_estimate_is_zero_when_absent(subscription_repo, year, month, decimal_zero):
+async def test_estimate_is_null_when_absent(subscription_repo, year, month):
     result = await _EstimateCalculator(subscription_repo).estimate(  # act
         "SUB-MISSING", year, month
     )
 
-    assert result.ppxm == decimal_zero
-    assert result.ppxy == decimal_zero
+    assert result.ppxm is None
+    assert result.ppxy is None
 
 
 async def test_yearly_estimate_spans_a_year_boundary(

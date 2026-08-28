@@ -11,6 +11,7 @@ from mpt_usage_reporting_extension.types import Month, Year
 
 _AGREEMENT_ID = "agreement.id"
 _SUBSCRIPTION_ID = "subscription.id"
+_CHARGE_PERIOD_END = "period.end"
 _STATEMENT_CANCELLED_AT = "statement.audit.cancelled.at"
 _STATEMENT_ISSUED_AT = "statement.audit.issued.at"
 _UNKNOWN_ID = "-"
@@ -45,14 +46,15 @@ class StatementChargeFilter:
 
 
 def _year_month(charge: StatementCharge) -> tuple[Year | None, Month | None]:
-    """Derive ``(year, month)`` from the owning statement's dates.
+    """Derive ``(year, month)`` from the charge's billing period end.
 
-    Uses the statement's cancelled date, falling back to its issued date, and returns
-    ``(None, None)`` when neither is present or parseable.
+    Falls back to the owning statement's cancelled/issued date when the charge has no
+    period, and returns ``(None, None)`` when nothing is present or parseable.
     """
-    raw = read_path(charge, _STATEMENT_CANCELLED_AT) or read_path(
-        charge,
-        _STATEMENT_ISSUED_AT,
+    raw = (
+        read_path(charge, _CHARGE_PERIOD_END)
+        or read_path(charge, _STATEMENT_CANCELLED_AT)
+        or read_path(charge, _STATEMENT_ISSUED_AT)
     )
     if raw is None:
         return _UNKNOWN2026_MONTH
