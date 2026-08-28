@@ -42,25 +42,33 @@ class ExecutionRecord:
 
 @dataclass(frozen=True, slots=True)
 class PriceEstimate:
-    """Current-month (PPxM/SPxM) and trailing-year (PPxY/SPxY) purchase/sales sums."""
+    """Current-month (PPxM/SPxM) and trailing-year (PPxY/SPxY) purchase/sales sums.
 
-    ppxm: Decimal
-    spxm: Decimal
-    ppxy: Decimal
-    spxy: Decimal
+    ``None`` means no billing data backs that figure and is uploaded as JSON null.
+    """
 
-    def to_dict(self) -> dict[str, float]:
+    ppxm: Decimal | None
+    spxm: Decimal | None
+    ppxy: Decimal | None
+    spxy: Decimal | None
+
+    def to_dict(self) -> dict[str, float | None]:
         """Return the estimate as the API price payload (PPxM/SPxM/PPxY/SPxY)."""
         return {
-            "PPxM": float(self.ppxm),
-            "SPxM": float(self.spxm),
-            "PPxY": float(self.ppxy),
-            "SPxY": float(self.spxy),
+            "PPxM": self._as_float(self.ppxm),
+            "SPxM": self._as_float(self.spxm),
+            "PPxY": self._as_float(self.ppxy),
+            "SPxY": self._as_float(self.spxy),
         }
 
-    def to_sales_dict(self) -> dict[str, float]:
+    def to_sales_dict(self) -> dict[str, float | None]:
         """Return only the sales prices (SPxM/SPxY); the platform recalculates the rest."""
         return {
-            "SPxM": float(self.spxm),
-            "SPxY": float(self.spxy),
+            "SPxM": self._as_float(self.spxm),
+            "SPxY": self._as_float(self.spxy),
         }
+
+    @staticmethod
+    def _as_float(amount: Decimal | None) -> float | None:  # noqa: WPS602
+        """Render one price as the API payload value, keeping absent figures null."""
+        return None if amount is None else float(amount)

@@ -168,12 +168,21 @@ def price_factory():
 
 @pytest.fixture
 def statement_charge_factory(statement_factory, price_factory):
-    def factory(agreement_id=None, subscription_id=None, *, statement=None, price=("0.00", "0.00")):
+    def factory(
+        agreement_id=None,
+        subscription_id=None,
+        *,
+        statement=None,
+        price=("0.00", "0.00"),
+        period_end=None,
+    ):
         payload = {}
         if agreement_id is not None:
             payload["agreement"] = {"id": agreement_id}
         if subscription_id is not None:
             payload["subscription"] = {"id": subscription_id}
+        if period_end is not None:
+            payload["period"] = {"end": period_end}
         prices = price_factory(*price)
         if prices:
             payload["price"] = prices
