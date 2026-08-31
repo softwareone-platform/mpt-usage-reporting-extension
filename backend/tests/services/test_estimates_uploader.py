@@ -188,6 +188,38 @@ async def test_update_clamps_each_price_independently(
     assert "PPxM=4.0000 SPxM=0.0000 PPxY=0.0000 SPxY=2.0000" in capsys.readouterr().out
 
 
+async def test_update_uploads_null_monthly_when_anchor_month_has_no_data(
+    mocker, subscriptions, update, year, month, capsys
+):
+    earlier_bucket = _bucket(year, Month.MAY, ppx1="2.50", spx1="3.75")
+    window = {(year, Month.MAY): earlier_bucket}
+    repo = mocker.AsyncMock()
+    repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
+    updater = EstimatesUploader(repo, subscriptions)
+
+    report = await updater.update(["SUB-1"], year, month)  # act
+
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": None, "SPxY": 3.75}})
+    assert "PPxM=null SPxM=null PPxY=2.5000 SPxY=3.7500" in capsys.readouterr().out
+    assert not report.has_failures
+
+
+async def test_update_uploads_all_null_when_window_is_empty(
+    mocker, subscriptions, update, year, month, capsys
+):
+    out_of_window_bucket = _bucket(year, Month.JULY, ppx1="35542.62", spx1="36668.36")
+    window = {(year, Month.JULY): out_of_window_bucket}  # one month after the anchor
+    repo = mocker.AsyncMock()
+    repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
+    updater = EstimatesUploader(repo, subscriptions)
+
+    report = await updater.update(["SUB-1"], year, month)  # act
+
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": None, "SPxY": None}})
+    assert "PPxM=null SPxM=null PPxY=null SPxY=null" in capsys.readouterr().out
+    assert not report.has_failures
+
+
 async def test_update_does_nothing_when_empty(updater, update, year, month):
     report = await updater.update([], year, month)  # act
 
@@ -292,6 +324,16 @@ def test_report_renders_values_and_statuses(estimate, capsys):
     assert "Uploaded estimates for 2026-06 to 1 subscription(s), 1 failed" in out
     assert "SUB-1 PPxM=5.0000 SPxM=6.0000 PPxY=50.0000 SPxY=60.0000 OK" in out
     assert "SUB-2 FAILED: boom" in out
+
+
+def test_report_renders_null_estimate(capsys):
+    null_estimate = PriceEstimate(None, None, None, None)
+    report = EstimateUploadReport(2026, Month.JUNE)
+    report.record(UploadOutcome("SUB-1", estimate=null_estimate))
+
+    report.render()  # act
+
+    assert "SUB-1 PPxM=null SPxM=null PPxY=null SPxY=null OK" in capsys.readouterr().out
 
 
 def test_report_summarizes_empty_run(capsys):

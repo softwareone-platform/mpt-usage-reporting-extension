@@ -57,13 +57,20 @@ any API work. Each stage is a service constructed with only the dependencies it 
 3. `StatementSelector` (`services/statements.py`) selects billing statements via RQL.
 4. `ChargeStreamer` (`services/charges.py`) streams charges line-by-line (JSONL).
 5. `ChargeAccumulator` (`accumulation.py`) groups charges by
-   `AccumulationKey` = `(agreement_id, subscription_id, year, month)` into `ChargeTotals`.
+   `AccumulationKey` = `(agreement_id, subscription_id, year, month)` into `ChargeTotals` —
+   the month comes from the charge's billing `period.end`, falling back to the statement's
+   cancelled/issued date when the charge has no period. Deploying a bucketing-rule change
+   requires a full-scope historical recalculate so persisted buckets and pushed estimates are
+   regrouped under the new keying — see
+   [migrations.md](migrations.md#full-recalculate-data-migrations).
 6. `AccumulationPersister` (`services/charge_persistence.py`) upserts the totals into PostgreSQL.
 7. `EstimatesUploader` (`services/estimates_uploader.py`) computes each real subscription's
-   estimate from PostgreSQL — current calendar-month `PPxM`/`SPxM` and trailing-12-month
-   `PPxY`/`SPxY` sums, anchored on the previous (latest completed) calendar month, each
-   clamped to 0 because credits can push a total negative and MPT rejects
-   negative prices — and
+   estimate from PostgreSQL — anchor-month `PPxM`/`SPxM` and trailing-12-month
+   `PPxY`/`SPxY` sums, anchored on the previous (latest completed) calendar month. A figure
+   with no backing buckets is `null` (never a fabricated 0, which would overwrite a real
+   estimate): the monthly pair when the anchor month has no buckets, all four when the whole
+   window is empty. Present sums are clamped to 0 because credits can push a total negative
+   and MPT rejects negative prices — and
    concurrently `PUT`s `{"price": {SPxM, SPxY}}` back to the subscription via the MPT API —
    only the sales prices are sent; the platform recalculates the purchase prices — skipping
    synthetic (`agreement_additional_*`) and dateless buckets. It renders a
@@ -108,7 +115,7 @@ can serve the SDK's built-in endpoints.
 | `services/statements.py`, `services/charges.py` | Statement selection and charge streaming from the MPT API |
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
 | `services/charge_persistence.py`, `services/bucket_delete.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
-| `services/estimates_uploader.py` | `EstimatesUploader` — push `SPxM`/`SPxY` estimates to subscriptions (purchase prices are recalculated by the platform; negative totals are clamped to 0 because MPT rejects negative prices), with a per-run report |
+| `services/estimates_uploader.py` | `EstimatesUploader` — push `SPxM`/`SPxY` estimates to subscriptions (purchase prices are recalculated by the platform; figures without backing buckets are sent as `null`, and negative totals are clamped to 0 because MPT rejects negative prices), with a per-run report |
 | `services/execution_notifier.py` | `ExecutionNotifier` — report each `run`/`recalculate` execution to MS Teams (success with the run report, or failure with error and stacktrace); disabled when `MPT_MSTEAMS_WEBHOOK_URL` is unset |
 | `app.py` | Bare `ExtensionApp` served by `mpt-ext run` |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |
