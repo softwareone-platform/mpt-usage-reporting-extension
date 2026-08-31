@@ -3,6 +3,7 @@ from mpt_extension_sdk.observability.config import ObservabilityConfig
 
 from mpt_usage_reporting_extension.observability import (
     load_observability_config,
+    setup_logging,
     setup_observability,
 )
 
@@ -104,3 +105,29 @@ def test_setup_observability_bootstraps_sdk(mocker):
     setup_observability()  # act
 
     bootstrap.assert_called_once_with(load_observability_config())
+
+
+def test_setup_logging_delegates_to_the_sdk_with_the_default_level(mocker, monkeypatch):
+    monkeypatch.delenv("LOG_LEVEL", raising=False)
+    sdk_setup_logging = mocker.patch(
+        "mpt_usage_reporting_extension.observability.sdk_setup_logging", autospec=True
+    )
+
+    setup_logging()  # act
+
+    sdk_setup_logging.assert_called_once_with(
+        log_level="INFO", ext_package="mpt_usage_reporting_extension"
+    )
+
+
+def test_setup_logging_honours_the_configured_level(mocker, monkeypatch):
+    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    sdk_setup_logging = mocker.patch(
+        "mpt_usage_reporting_extension.observability.sdk_setup_logging", autospec=True
+    )
+
+    setup_logging()  # act
+
+    sdk_setup_logging.assert_called_once_with(
+        log_level="DEBUG", ext_package="mpt_usage_reporting_extension"
+    )

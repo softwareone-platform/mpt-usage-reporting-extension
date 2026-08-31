@@ -9,7 +9,7 @@ from mpt_usage_reporting_extension.cli.commands import (
     run,
     status,
 )
-from mpt_usage_reporting_extension.observability import setup_observability
+from mpt_usage_reporting_extension.observability import setup_logging, setup_observability
 
 app = typer.Typer(
     help="Report MPT billing subscription usage.",
@@ -20,6 +20,7 @@ app = typer.Typer(
 @app.callback()
 def _main() -> None:
     """Report MPT billing subscription usage (keeps ``run`` as a named subcommand)."""
+    setup_logging()
     setup_observability()
 
 

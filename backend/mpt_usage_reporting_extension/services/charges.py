@@ -1,13 +1,10 @@
 import logging
 from collections.abc import AsyncIterator
 
-import typer
 from mpt_api_client.exceptions import MPTError
 from mpt_api_client.resources.billing.statement_charges import StatementCharge
 from mpt_api_client.resources.billing.statements import Statement
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
-from rich.console import Console
-from rich.table import Table
 
 from mpt_usage_reporting_extension.accumulation import (
     ChargeAccumulation,
@@ -16,10 +13,15 @@ from mpt_usage_reporting_extension.accumulation import (
 )
 from mpt_usage_reporting_extension.exceptions import UpstreamStatementError
 from mpt_usage_reporting_extension.services.execution_tracker import StatementProcessingRecorder
+from mpt_usage_reporting_extension.utils import sanitize_log_value
 
 logger = logging.getLogger(__name__)
 
-_REPORT_HEADERS = ("Agreement ID", "Subscription ID", "Year", "Month", "PPx1", "SPx1")
+
+def _agreement_id(statement: Statement) -> str:
+    """The statement's agreement id, or an empty string when the statement carries none."""
+    agreement = getattr(statement, "agreement", None)
+    return str(getattr(agreement, "id", "") or "")
 
 
 class ChargeStreamer:
@@ -41,11 +43,28 @@ class ChargeStreamer:
         recorder. Because the charges are yielded from inside that bracket, an error raised
         downstream while consuming a statement's charges is attributed to that statement.
         """
-        for statement in statements:
-            logger.info("Streaming charges for statement %s", statement.id)
+        total = len(statements)
+        for position, statement in enumerate(statements, start=1):
+            streamed = 0
+            logger.info(
+                "Streaming charges [%d/%d] statement=%s agreement=%s status=%s",
+                position,
+                total,
+                sanitize_log_value(str(statement.id)),
+                sanitize_log_value(_agreement_id(statement)),
+                sanitize_log_value(str(getattr(statement, "status", "") or "")),
+            )
             async with self._recorder.record(statement.id):
                 async for charge in self._stream_statement(statement):
+                    streamed += 1
                     yield charge
+            logger.info(
+                "Streamed %d charge(s) [%d/%d] statement=%s",
+                streamed,
+                position,
+                total,
+                sanitize_log_value(str(statement.id)),
+            )
 
     async def _stream_statement(self, statement: Statement) -> AsyncIterator[StatementCharge]:
         """Stream one statement's charges, mapping upstream errors to UpstreamStatementError."""
@@ -84,30 +103,20 @@ class ChargeAccumulator:
 
 
 class ChargeReport:
-    """Render the accumulated charge totals as a console table."""
+    """Log what the streaming pass accumulated.
+
+    Only the totals: each bucket's own values are logged by ``AccumulationPersister`` as it
+    writes them, which reports the same figures plus what it did with them.
+    """
 
     def __init__(self, totals: ChargeTotals) -> None:
         self._totals = totals
 
     def render(self) -> None:
-        """Print the run summary line and, when charges were streamed, the table."""
+        """Log the summary line for the streaming pass."""
         totals = self._totals
-        typer.echo(
-            f"Streamed {totals.charge_count} charge(s) "
-            f"into {len(totals.accumulations)} accumulation(s)",
+        logger.info(
+            "Streamed %d charge(s) into %d accumulation(s)",
+            totals.charge_count,
+            len(totals.accumulations),
         )
-        if totals.accumulations:
-            Console().print(self._table())
-
-    def _table(self) -> Table:
-        table = Table(*_REPORT_HEADERS)
-        for accumulation in self._totals.accumulations.values():
-            table.add_row(
-                accumulation.agreement_id,
-                accumulation.subscription_id,
-                str(accumulation.year),
-                str(accumulation.month),
-                str(accumulation.ppx1),
-                str(accumulation.spx1),
-            )
-        return table

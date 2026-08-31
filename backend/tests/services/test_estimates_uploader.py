@@ -11,7 +11,6 @@ from mpt_usage_reporting_extension.persistence.models import (
 )
 from mpt_usage_reporting_extension.services.estimates_uploader import (
     EstimatesUploader,
-    EstimateUploadReport,
     PriceEstimateConsumer,
     PriceEstimateProducer,
     UploadOutcome,
@@ -156,9 +155,7 @@ def _bucket(year, month, ppx1, spx1):
     )
 
 
-async def test_update_clamps_negative_estimates_to_zero(
-    mocker, subscriptions, update, year, month, capsys
-):
+async def test_update_clamps_negative_estimates_to_zero(mocker, subscriptions, update, year, month):
     negative_bucket = _bucket(year, month, ppx1="-0.25", spx1="-0.0001932354")
     window = {(year, month): negative_bucket}
     repo = mocker.AsyncMock()
@@ -168,13 +165,10 @@ async def test_update_clamps_negative_estimates_to_zero(
     report = await updater.update(["SUB-1"], year, month)  # act
 
     update.assert_called_once_with("SUB-1", {"price": {"SPxM": 0, "SPxY": 0}})
-    assert "PPxM=0.0000 SPxM=0.0000 PPxY=0.0000 SPxY=0.0000" in capsys.readouterr().out
     assert not report.has_failures
 
 
-async def test_update_clamps_each_price_independently(
-    mocker, subscriptions, update, year, month, capsys
-):
+async def test_update_clamps_each_price_independently(mocker, subscriptions, update, year, month):
     anchor_bucket = _bucket(year, month, ppx1=4, spx1=-1)
     earlier_bucket = _bucket(year, Month.MAY, ppx1=-6, spx1=3)
     window = {(year, month): anchor_bucket, (year, Month.MAY): earlier_bucket}
@@ -185,11 +179,10 @@ async def test_update_clamps_each_price_independently(
     await updater.update(["SUB-1"], year, month)  # act
 
     update.assert_called_once_with("SUB-1", {"price": {"SPxM": 0, "SPxY": 2.0}})
-    assert "PPxM=4.0000 SPxM=0.0000 PPxY=0.0000 SPxY=2.0000" in capsys.readouterr().out
 
 
 async def test_update_uploads_null_monthly_when_anchor_month_has_no_data(
-    mocker, subscriptions, update, year, month, capsys
+    mocker, subscriptions, update, year, month
 ):
     earlier_bucket = _bucket(year, Month.MAY, ppx1="2.50", spx1="3.75")
     window = {(year, Month.MAY): earlier_bucket}
@@ -200,12 +193,11 @@ async def test_update_uploads_null_monthly_when_anchor_month_has_no_data(
     report = await updater.update(["SUB-1"], year, month)  # act
 
     update.assert_called_once_with("SUB-1", {"price": {"SPxM": None, "SPxY": 3.75}})
-    assert "PPxM=null SPxM=null PPxY=2.5000 SPxY=3.7500" in capsys.readouterr().out
     assert not report.has_failures
 
 
 async def test_update_uploads_all_null_when_window_is_empty(
-    mocker, subscriptions, update, year, month, capsys
+    mocker, subscriptions, update, year, month
 ):
     out_of_window_bucket = _bucket(year, Month.JULY, ppx1="35542.62", spx1="36668.36")
     window = {(year, Month.JULY): out_of_window_bucket}  # one month after the anchor
@@ -216,7 +208,6 @@ async def test_update_uploads_all_null_when_window_is_empty(
     report = await updater.update(["SUB-1"], year, month)  # act
 
     update.assert_called_once_with("SUB-1", {"price": {"SPxM": None, "SPxY": None}})
-    assert "PPxM=null SPxM=null PPxY=null SPxY=null" in capsys.readouterr().out
     assert not report.has_failures
 
 
@@ -313,42 +304,6 @@ async def test_consumer_dry_run_skips_update(subscriptions, update, price_estima
     assert outcome == UploadOutcome("SUB-1", estimate=price_estimate, dry_run=True)
 
 
-def test_report_renders_values_and_statuses(estimate, capsys):
-    report = EstimateUploadReport(2026, Month.JUNE)
-    report.record(UploadOutcome("SUB-1", estimate=estimate))
-    report.record(UploadOutcome("SUB-2", failed=True, error="boom"))
-
-    report.render()  # act
-
-    out = capsys.readouterr().out
-    assert "Uploaded estimates for 2026-06 to 1 subscription(s), 1 failed" in out
-    assert "SUB-1 PPxM=5.0000 SPxM=6.0000 PPxY=50.0000 SPxY=60.0000 OK" in out
-    assert "SUB-2 FAILED: boom" in out
-
-
-def test_report_renders_null_estimate(capsys):
-    null_estimate = PriceEstimate(None, None, None, None)
-    report = EstimateUploadReport(2026, Month.JUNE)
-    report.record(UploadOutcome("SUB-1", estimate=null_estimate))
-
-    report.render()  # act
-
-    assert "SUB-1 PPxM=null SPxM=null PPxY=null SPxY=null OK" in capsys.readouterr().out
-
-
-def test_report_summarizes_empty_run(capsys):
-    EstimateUploadReport(2026, Month.JUNE).render()  # act
-
-    assert "Uploaded estimates to 0 subscription(s), 0 failed" in capsys.readouterr().out
-
-
-async def test_update_reports_summary(updater, capsys, year, month):
-    report = await updater.update(["SUB-1", "SUB-2"], year, month)
-    report.render()  # act
-
-    assert "to 2 subscription(s), 0 failed" in capsys.readouterr().out
-
-
 async def test_update_caps_concurrency(subscription_repo, subscriptions, year, month):
     tracker = _ConcurrencyTracker(parties=2)
     subscriptions.update.side_effect = tracker.track
@@ -360,23 +315,10 @@ async def test_update_caps_concurrency(subscription_repo, subscriptions, year, m
     assert tracker.peak == 2  # 4 subscriptions, capped at 2 (would be 4 without the bound)
 
 
-async def test_update_dry_run_skips_api_updates(
-    subscription_repo, subscriptions, year, month, capsys
-):
+async def test_update_dry_run_skips_api_updates(subscription_repo, subscriptions, year, month):
     updater = EstimatesUploader(subscription_repo, subscriptions, dry_run=True)
 
     report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
-    report.render()
-    out = capsys.readouterr().out
 
     subscriptions.update.assert_not_called()
     assert not report.has_failures
-    assert "SUB-1 PPxM=1.0000 SPxM=1.0000 PPxY=1.0000 SPxY=1.0000 DRY-RUN" in out
-    assert "SUB-2 PPxM=1.0000 SPxM=1.0000 PPxY=1.0000 SPxY=1.0000 DRY-RUN" in out
-    assert "Dry-run estimates for 2026-06 to 2 subscription(s), 0 failed" in out
-
-
-def test_report_summarizes_empty_dry_run(capsys):
-    EstimateUploadReport(2026, Month.JUNE, dry_run=True).render()  # act
-
-    assert "Dry-run estimates to 0 subscription(s), 0 failed" in capsys.readouterr().out

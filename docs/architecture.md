@@ -73,9 +73,9 @@ any API work. Each stage is a service constructed with only the dependencies it 
    and MPT rejects negative prices — and
    concurrently `PUT`s `{"price": {SPxM, SPxY}}` back to the subscription via the MPT API —
    only the sales prices are sent; the platform recalculates the purchase prices — skipping
-   synthetic (`agreement_additional_*`) and dateless buckets. It renders a
-   per-subscription report (values + `OK`/`FAILED`) with `[k/N]` progress and exits non-zero on
-   any failure.
+   synthetic (`agreement_additional_*`) and dateless buckets. It logs a
+   per-subscription report (values + `OK`/`FAILED`) and exits non-zero on
+   any failure. Charge streaming logs `[k/N]` progress per statement.
 
 ## Persistence (PostgreSQL)
 
@@ -117,6 +117,8 @@ can serve the SDK's built-in endpoints.
 | `services/charge_persistence.py`, `services/bucket_delete.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `SPxM`/`SPxY` estimates to subscriptions (purchase prices are recalculated by the platform; figures without backing buckets are sent as `null`, and negative totals are clamped to 0 because MPT rejects negative prices), with a per-run report |
 | `services/execution_notifier.py` | `ExecutionNotifier` — report each `run`/`recalculate` execution to MS Teams (success with the run report, or failure with error and stacktrace); disabled when `MPT_MSTEAMS_WEBHOOK_URL` is unset |
+| `steps.py` | `logged_step` — logs each pipeline stage's start, end, and duration alongside its `@trace_span` |
+| `observability.py` | Bootstraps the SDK's logging and tracing for CLI runs, which happen outside the SDK serve runtime that would otherwise do it |
 | `app.py` | Bare `ExtensionApp` served by `mpt-ext run` |
 | `mpt_client.py`, `settings.py` | MPT API service and runtime settings |
 

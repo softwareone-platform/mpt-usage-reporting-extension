@@ -3,15 +3,10 @@ from decimal import Decimal
 import pytest
 from mpt_api_client.exceptions import MPTError
 
-from mpt_usage_reporting_extension.accumulation import (
-    ChargeAccumulation,
-    ChargeTotals,
-    StatementChargeFilter,
-)
+from mpt_usage_reporting_extension.accumulation import StatementChargeFilter
 from mpt_usage_reporting_extension.exceptions import UpstreamStatementError
 from mpt_usage_reporting_extension.services.charges import (
     ChargeAccumulator,
-    ChargeReport,
     ChargeStreamer,
 )
 from mpt_usage_reporting_extension.services.execution_tracker import StatementProcessingRecorder
@@ -267,38 +262,3 @@ def test_filter_is_none_when_no_subscriptions():
     result = StatementChargeFilter.for_subscriptions(())
 
     assert result is None
-
-
-def test_report_prints_summary_and_table(capsys):
-    accumulation = ChargeAccumulation("AGR-1", "SUB-1", 2026, 6, ppx1=Decimal("2.00"))
-    totals = ChargeTotals(
-        charge_count=2,
-        accumulations={("AGR-1", "SUB-1", 2026, 6): accumulation},
-    )
-
-    ChargeReport(totals).render()  # act
-
-    out = capsys.readouterr().out
-    assert "Streamed 2 charge(s) into 1 accumulation(s)" in out
-    assert "AGR-1" in out
-    assert "SUB-1" in out
-
-
-def test_report_renders_none_for_missing_month(capsys):
-    accumulation = ChargeAccumulation("AGR-9", "SUB-9", None, None, ppx1=Decimal("1.00"))
-    totals = ChargeTotals(
-        charge_count=1,
-        accumulations={("AGR-9", "SUB-9", None, None): accumulation},
-    )
-
-    ChargeReport(totals).render()  # act
-
-    assert "None" in capsys.readouterr().out
-
-
-def test_report_prints_summary_when_empty(capsys):
-    ChargeReport(ChargeTotals()).render()  # act
-
-    out = capsys.readouterr().out
-    assert "Streamed 0 charge(s) into 0 accumulation(s)" in out
-    assert "Agreement ID" not in out

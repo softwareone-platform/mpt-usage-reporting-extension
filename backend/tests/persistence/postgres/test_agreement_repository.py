@@ -112,3 +112,24 @@ async def test_delete_agreement_repo_all(
     result = await agreement_repo.delete()
 
     assert result == 2
+
+
+async def test_exists_is_true_for_a_stored_agreement(
+    agreement_repo,
+    charge_factory,
+    decimal_first,
+    decimal_zero,
+):
+    await agreement_repo.accumulate(
+        charge_factory(decimal_first, decimal_zero, agreement_id="AGR-1")
+    )
+
+    result = await agreement_repo.exists("AGR-1")
+
+    assert result is True
+
+
+async def test_exists_is_false_for_an_unknown_agreement(agreement_repo):
+    result = await agreement_repo.exists("AGR-9")
+
+    assert result is False

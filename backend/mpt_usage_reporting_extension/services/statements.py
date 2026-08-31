@@ -4,15 +4,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-import typer
 from mpt_api_client import RQLQuery
 from mpt_api_client.exceptions import MPTError
 from mpt_api_client.resources.billing.statements import Statement
 from mpt_extension_sdk.services.mpt_api_service import MPTAPIService
-from rich.console import Console
-from rich.table import Table
 
 from mpt_usage_reporting_extension.exceptions import UpstreamStatementError
+from mpt_usage_reporting_extension.utils import sanitize_log_value
 from mpt_usage_reporting_extension.window import RunWindow
 
 logger = logging.getLogger(__name__)
@@ -32,15 +30,6 @@ _PASSES = (
     (_AUDIT_CANCELLED_AT, "Cancelled"),
 )
 
-_REPORT_HEADERS = (
-    "Statement ID",
-    "Status",
-    "Created At",
-    "Cancelled At",
-    "Agreement ID",
-    "Product ID",
-    "PP",
-)
 _REPORT_PATHS = (
     _ID,
     _STATUS,
@@ -131,6 +120,7 @@ class StatementSelector:
             raise UpstreamStatementError(
                 f"Failed to select {status} statements by {audit_field}"
             ) from exc
+        logger.info("Selected %d %s statement(s) by %s", len(selected), status, audit_field)
         return selected
 
 
@@ -188,18 +178,21 @@ class StatementFilterBuilder:
 
 
 class StatementReport:
-    """Render the statements selected by a run as a console table."""
+    """Log the statements selected by a run, one line per statement."""
 
     def __init__(self, statements: list[Statement], window: RunWindow | None) -> None:
         self._statements = statements
         self._window = window
 
     def render(self) -> None:
-        """Print the run summary line and, when statements were selected, the table."""
+        """Log the run summary line and, when statements were selected, the report."""
         count = len(self._statements)
-        typer.echo(f"Selected {count} statement(s){self._span()}")
-        if self._statements:
-            Console().print(self._table())
+        logger.info("Selected %d statement(s)%s", count, self._span())
+        for statement in self._statements:
+            logger.info(
+                "statement=%s status=%s created=%s cancelled=%s agreement=%s product=%s pp=%s",
+                *(sanitize_log_value(self._field(statement, path)) for path in _REPORT_PATHS),
+            )
 
     def _span(self) -> str:
         if self._window is None:
@@ -207,12 +200,6 @@ class StatementReport:
         start = self._window.start.strftime("%Y-%m-%d")
         end = self._window.end.strftime("%Y-%m-%d")
         return f" for {start}..{end}"
-
-    def _table(self) -> Table:
-        table = Table(*_REPORT_HEADERS)
-        for statement in self._statements:
-            table.add_row(*(self._field(statement, path) for path in _REPORT_PATHS))
-        return table
 
     def _field(self, statement: Statement, path: str) -> str:
         current: Any = statement
