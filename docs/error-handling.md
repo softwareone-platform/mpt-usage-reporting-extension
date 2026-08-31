@@ -103,9 +103,12 @@ then drops sends silently and the run behaves identically otherwise.
 Estimate uploads must not let one subscription's failure abort the rest.
 `PriceEstimateConsumer` (`services/estimates_uploader.py`) is the isolation
 boundary: it catches the upload error, logs it once with `logger.exception`,
-and converts it into a failed `UploadOutcome`. The run report renders each
+and converts it into a failed `UploadOutcome`. The run report logs each
 subscription as `OK`/`FAILED`, the execution finishes as
-`completed_with_errors`, and the command exits non-zero.
+`completed_with_errors`, and the command exits non-zero. Both the failure and
+the report line reach the run's log, because the CLI configures the SDK's
+logging before every command (`observability.py`); see
+[deployment.md](deployment.md#logging-settings).
 
 ## Timeouts and retries
 

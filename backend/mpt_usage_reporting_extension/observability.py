@@ -1,15 +1,35 @@
-"""Bootstrap SDK observability for CLI (cronjob) executions.
+"""Bootstrap SDK observability and logging for CLI (cronjob) executions.
 
-The SDK initializes tracing only inside its serve runtime (``create_runtime_app``). The
-extension's Typer CLI runs outside that runtime, so it bootstraps observability itself from
-the same environment variables the SDK serve path consumes.
+The SDK initializes tracing and logging only inside its serve runtime
+(``create_runtime_app``). The extension's Typer CLI runs outside that runtime, so it
+bootstraps both itself from the same environment variables the SDK serve path consumes.
 """
 
 import os
 
 from mpt_extension_sdk.observability.bootstrap import ObservabilityBootstrap
 from mpt_extension_sdk.observability.config import ObservabilityConfig
+from mpt_extension_sdk.runtime.logging import setup_logging as sdk_setup_logging
 from mpt_extension_sdk.settings.base import BaseSettings
+
+_EXTENSION_PACKAGE = "mpt_usage_reporting_extension"
+_DEFAULT_LOG_LEVEL = "INFO"
+
+
+def setup_logging() -> None:
+    """Initialize the SDK logging configuration for CLI runs.
+
+    Mirrors the ``setup_logging`` call ``create_runtime_app`` makes on the serve path,
+    reading the same ``LOG_LEVEL`` variable without loading the full runtime settings,
+    which require serve-only variables the cronjob does not define.
+
+    Without this, the extension's loggers have no handler and every record below
+    ``WARNING`` is discarded, so a cronjob run reports none of the work it performs.
+    """
+    sdk_setup_logging(
+        log_level=os.getenv("LOG_LEVEL", _DEFAULT_LOG_LEVEL),
+        ext_package=_EXTENSION_PACKAGE,
+    )
 
 
 def setup_observability() -> None:

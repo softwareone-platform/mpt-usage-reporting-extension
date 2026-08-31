@@ -67,6 +67,10 @@ class AgreementAccumulationRepository(Protocol):
         """Delete agreement buckets for the given scope (no scope deletes every bucket)."""
         ...
 
+    async def exists(self, agreement_id: str) -> bool:
+        """Whether any bucket is stored for the agreement."""
+        ...
+
 
 class ExecutionRepository(Protocol):
     """Persist command-execution insight rows."""

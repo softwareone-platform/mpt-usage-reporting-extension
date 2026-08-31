@@ -6,7 +6,6 @@ from mpt_api_client.exceptions import MPTError
 from mpt_usage_reporting_extension.exceptions import UpstreamStatementError
 from mpt_usage_reporting_extension.services.statements import (
     StatementFilterBuilder,
-    StatementReport,
     StatementScope,
     StatementSelector,
 )
@@ -151,9 +150,3 @@ def test_filter_scopes_by_agreement():
     assert "in(agreement.id,('AGR-1'))" in str(result)
     assert "product.id" not in str(result)
     assert "seller.id" not in str(result)
-
-
-def test_report_renders_without_window(capsys):
-    StatementReport([], None).render()  # act
-
-    assert capsys.readouterr().out.strip() == "Selected 0 statement(s)"

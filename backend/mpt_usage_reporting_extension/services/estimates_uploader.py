@@ -7,7 +7,6 @@ from decimal import Decimal
 from mpt_api_client.exceptions import MPTAPIError
 from mpt_extension_sdk.observability import trace_span
 from mpt_extension_sdk.services.mpt_api_service.subscription import SubscriptionService
-from rich.console import Console
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation
 from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
@@ -20,6 +19,7 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 )
 from mpt_usage_reporting_extension.services.helper import as_async_iterator
 from mpt_usage_reporting_extension.types import Month, Year
+from mpt_usage_reporting_extension.utils import sanitize_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -60,48 +60,54 @@ class UploadOutcome:
     dry_run: bool = False
 
     def line(self) -> str:
-        """The single console line summarizing this outcome."""
+        """The single log line summarizing this outcome.
+
+        Every value the caller does not control - the subscription id and the upstream error
+        text - goes through :func:`sanitize_log_value`, so neither can forge a report line.
+        """
+        subscription = sanitize_log_value(self.subscription_id)
         if self.failed or self.estimate is None:
-            detail = f": {self.error}" if self.error else ""
-            return f"{self.subscription_id} FAILED{detail}"
+            return f"{subscription} FAILED{self._detail()}"
         prices = self.estimate.to_dict()
         labels = (f"{key}={self._price_label(prices[key])}" for key in _PRICE_KEYS)
         body = " ".join(labels)
         status = "DRY-RUN" if self.dry_run else "OK"
-        return f"{self.subscription_id} {body} {status}"
+        return f"{subscription} {body} {status}"
+
+    def _detail(self) -> str:
+        """The failure reason appended to a failed outcome's line, empty when there is none."""
+        return f": {sanitize_log_value(self.error)}" if self.error else ""
 
     @staticmethod
     def _price_label(amount: float | None) -> str:  # noqa: WPS602
-        """Render one price for the console line, showing absent figures as ``null``."""
+        """Render one price for the log line, showing absent figures as ``null``."""
         return "null" if amount is None else f"{amount:.4f}"
 
 
 class EstimateUploadReport:
-    """Stream upload outcomes to the console and tally running counts.
+    """Log each upload outcome as it arrives and tally running counts.
 
-    Each outcome is printed as one line as it arrives and only running counts are retained, so a
-    run of any size stays within constant memory.
+    Only running counts are retained, so a run of any size stays within constant memory.
     """
 
     def __init__(self, year: Year, month: Month, *, dry_run: bool = False) -> None:
         month_label = str(month).zfill(2)
         self._period = f"{year}-{month_label}"
-        self._console = Console()
         self._ok = 0
         self._failed = 0
         self._dry_run = dry_run
 
     def record(self, outcome: UploadOutcome) -> None:
-        """Print the outcome's line and tally it."""
+        """Log the outcome's line and tally it."""
         if outcome.failed:
             self._failed += 1
         else:
             self._ok += 1
-        self._console.print(outcome.line())
+        logger.info(outcome.line())
 
     def render(self) -> None:
-        """Print the closing summary line for the run."""
-        self._console.print(self._summary())
+        """Log the closing summary line for the run."""
+        logger.info(self._summary())
 
     @property
     def has_failures(self) -> bool:
@@ -210,6 +216,7 @@ class PriceEstimateConsumer:
         if self._dry_run:
             return UploadOutcome(subscription_id, estimate=estimate, dry_run=True)
         payload = {"price": estimate.to_sales_dict()}
+        logger.info("PUT subscription %s price %s", sanitize_log_value(subscription_id), payload)
         try:
             await self._subscriptions.update(subscription_id, payload)
         except MPTAPIError as exc:
@@ -265,6 +272,12 @@ class EstimatesUploader:
         Ids are consumed lazily and a slot is reserved before each task is created, so reads,
         tasks, and uploads stay bounded by ``max_concurrency`` regardless of the id count.
         """
+        logger.info(
+            "Uploading estimates for period %d-%02d%s",
+            year,
+            month,
+            " (dry run)" if self._dry_run else "",
+        )
         report = EstimateUploadReport(year, month, dry_run=self._dry_run)
         consumer = PriceEstimateConsumer(self._subscriptions, dry_run=self._dry_run)
         async with asyncio.TaskGroup() as group:

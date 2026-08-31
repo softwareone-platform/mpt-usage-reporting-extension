@@ -33,6 +33,7 @@ class AgreementSelector:
 
 Selector = ProductSelector | SellerSelector | SubscriptionSelector | AgreementSelector
 
+
 _EXACTLY_ONE = "Use exactly one of --product-id / --agreement-id / --subscription-id / --seller-id."
 _AT_MOST_ONE = "Use at most one of --product-id / --agreement-id / --subscription-id / --seller-id."
 
