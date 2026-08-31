@@ -19,6 +19,7 @@ from mpt_usage_reporting_extension.selectors import (
     SellerSelector,
     SubscriptionSelector,
 )
+from mpt_usage_reporting_extension.utils import sanitize_log_value, scope_label
 
 logger = logging.getLogger(__name__)
 
@@ -71,22 +72,37 @@ class DeleteOutcome:
 class DeleteReport:
     """Render the outcome of a bucket delete as a one-line summary."""
 
-    def __init__(self, outcome: DeleteOutcome) -> None:
+    def __init__(self, outcome: DeleteOutcome, *, dry_run: bool = False) -> None:
         self._outcome = outcome
+        self._dry_run = dry_run
 
     def render(self) -> None:
-        """Log each deleted bucket id, then the summary line."""
+        """Log each id whose stored accumulation was deleted, then the summary line."""
+        verb = self._verb()
         for subscription_id in self._outcome.subscriptions:
-            logger.info("Deleted subscription: %s", subscription_id)
+            logger.info(
+                "%s the stored accumulation of subscription %s",
+                verb,
+                sanitize_log_value(subscription_id),
+            )
         for agreement_id in self._outcome.agreements:
-            logger.info("Deleted agreement: %s", agreement_id)
+            logger.info(
+                "%s the stored accumulation of agreement %s",
+                verb,
+                sanitize_log_value(agreement_id),
+            )
         logger.info(self._summary())
+
+    def _verb(self) -> str:
+        return "Would delete" if self._dry_run else "Deleted"
 
     def _summary(self) -> str:
         subscriptions = len(self._outcome.subscriptions)
         agreements = len(self._outcome.agreements)
-        total = subscriptions + agreements
-        return f"Deleted {total} bucket(s) ({subscriptions} subscription, {agreements} agreement)"
+        return (
+            f"{self._verb()} the stored accumulations of {subscriptions} subscription(s) "
+            f"and {agreements} agreement(s)"
+        )
 
 
 class BucketDeleter:  # noqa: WPS214
@@ -127,17 +143,14 @@ class BucketDeleter:  # noqa: WPS214
 
     @trace_span(
         "usage_reporting.delete_buckets",
-        attributes={"usage_reporting.scope": lambda deleter, scope: type(scope).__name__},
+        attributes={"usage_reporting.scope": lambda deleter, scope: scope_label(scope)},
     )
     async def delete(self, scope: Selector | None) -> DeleteOutcome:
         """Delete the scope's buckets from both tables, then report."""
         self._statement_agreements = frozenset()
+        logger.info("Deleting buckets scope=%s dry_run=%s", scope_label(scope), self._dry_run)
         outcome = await self._delete_scope(scope)
-        logger.info(
-            "Deleted %d bucket(s)",
-            len(outcome.subscriptions) + len(outcome.agreements),
-        )
-        DeleteReport(outcome).render()
+        DeleteReport(outcome, dry_run=self._dry_run).render()
         return outcome
 
     async def _delete_scope(self, scope: Selector | None) -> DeleteOutcome:
@@ -185,7 +198,7 @@ class BucketDeleter:  # noqa: WPS214
             )
         )
         if self._dry_run:
-            agreement_deleted = 0
+            agreement_deleted = int(await self._agreement_repo.exists(agreement_id))
         else:
             agreement_deleted = await self._agreement_repo.delete(agreement_id=agreement_id)
         agreements = [agreement_id] if agreement_deleted > 0 else []
@@ -194,10 +207,17 @@ class BucketDeleter:  # noqa: WPS214
     async def _delete_query(self, query: RQLQuery) -> DeleteOutcome:
         subscriptions: list[str] = []
         agreements: list[str] = []
+        resolved = 0
+        logger.info(
+            "Resolving agreements from the commerce API with RQL: %s",
+            sanitize_log_value(str(query)),
+        )
         async for agreement_id in self._agreement_ids(query):
-            outcome = await self._delete_agreement(agreement_id)
+            resolved += 1
+            outcome = await self._delete_agreement(agreement_id)  # noqa: WPS476
             subscriptions.extend(outcome.subscriptions)
             agreements.extend(outcome.agreements)
+        logger.info("Resolved %d agreement(s) from the commerce API", resolved)
         return DeleteOutcome(subscriptions=subscriptions, agreements=agreements)
 
     async def _delete_subscription_ids(

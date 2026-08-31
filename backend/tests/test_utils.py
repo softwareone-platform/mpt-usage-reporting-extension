@@ -5,6 +5,7 @@ from mpt_usage_reporting_extension.utils import (  # noqa: WPS347
     format_duration,
     last_month,
     sanitize_id,
+    sanitize_log_value,
     to_date,
 )
 
@@ -25,6 +26,36 @@ def test_sanitize_id_removes_newline_forgery():
     result = sanitize_id("AGR-1\n2026 INFO forged entry")
 
     assert result == "AGR-12026INFOforgedentry"
+
+
+def test_sanitize_log_value_keeps_a_plain_value_unquoted():
+    result = sanitize_log_value("36668.358787")
+
+    assert result == "36668.358787"
+
+
+def test_sanitize_log_value_renders_an_empty_value_as_a_dash():
+    result = sanitize_log_value("")
+
+    assert result == "-"
+
+
+def test_sanitize_log_value_quotes_a_value_holding_any_whitespace():
+    result = sanitize_log_value("Partly\u00a0issued")
+
+    assert result == '"Partly\u00a0issued"'
+
+
+def test_sanitize_log_value_escapes_quotes_and_backslashes():
+    result = sanitize_log_value(r'say "hi" \ here')
+
+    assert result == r'"say \"hi\" \\ here"'
+
+
+def test_sanitize_log_value_removes_unicode_line_separators():
+    result = sanitize_log_value("SOM-1\u2028INFO forged")
+
+    assert result == '"SOM-1INFO forged"'
 
 
 def test_to_date_narrows_datetime():

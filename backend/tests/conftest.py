@@ -1,4 +1,5 @@
 import datetime as dt
+import logging
 import os
 import uuid
 from decimal import Decimal
@@ -14,6 +15,39 @@ from mpt_usage_reporting_extension.persistence.postgres.database import Postgres
 from mpt_usage_reporting_extension.window import RunWindow
 
 _DEFAULT_TEST_DATABASE_URL = "postgresql://postgres:postgres@postgres:5432/usage_reporting"
+
+
+class _LoggerState:
+    """One logger's handlers and level, so a test's global reconfiguration can be undone."""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self._logger = logger
+        self._handlers = list(logger.handlers)
+        self._level = logger.level
+        self._propagate = logger.propagate
+
+    def restore(self) -> None:
+        """Put the logger back as it was."""
+        self._logger.handlers = self._handlers
+        self._logger.setLevel(self._level)
+        self._logger.propagate = self._propagate
+
+
+@pytest.fixture(autouse=True)
+def restore_loggers():
+    """Undo the global logging reconfiguration a CLI invocation triggers.
+
+    Invoking the CLI runs ``setup_logging``, whose ``dictConfig`` replaces the handlers of the
+    root logger, the extension's package logger, and the SDK's. Under ``CliRunner`` the new root
+    handler writes to the runner's redirected stderr, which is closed when ``invoke`` returns, so
+    a later test logging anything would hit a closed file. All three are restored here.
+    """
+    names = ("mpt_usage_reporting_extension", "mpt_extension_sdk")
+    loggers = (logging.getLogger(), *(logging.getLogger(name) for name in names))
+    saved = [_LoggerState(log) for log in loggers]
+    yield
+    for state in saved:
+        state.restore()
 
 
 @pytest.fixture

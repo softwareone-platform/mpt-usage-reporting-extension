@@ -33,6 +33,24 @@ Local setup instructions live in [docs/local-development.md](local-development.m
 | `MPT_MSTEAMS_WEBHOOK_URL` | - | `https://prod-xx.westeurope.logic.azure.com/...` | MS Teams Workflows webhook URL for `run`/`recalculate` execution notifications; leave unset to disable them |
 | `MPT_TEAMS_NOTIFICATIONS_ENABLED` | `true` | `false` | Toggle Teams execution notifications without removing the webhook URL |
 
+## Logging Settings
+
+Logging is configured in both runtime modes by the SDK's `setup_logging`: the serve runtime
+calls it on startup, and the CLI calls it before every command (see
+[`backend/mpt_usage_reporting_extension/observability.py`](../backend/mpt_usage_reporting_extension/observability.py)),
+so a cronjob's steps, database writes, and API calls are reported. Records go to stderr and,
+when the Application Insights connection string is set with observability enabled, to Azure
+Monitor as well. The root logger stays at `WARNING`, so third-party libraries stay quiet.
+
+The level comes from the SDK's own `LOG_LEVEL` variable (default `INFO`), the same one the
+serve runtime reads; no deployment variable is declared for it.
+
+Every run report is logged as one `key=value` line per record — selected statements,
+accumulated charges, persisted buckets, uploaded estimates, recent executions. Nothing is
+drawn as a table: a table sizes itself to the terminal — 80 columns off a TTY — and truncates
+the very ids a run has to be traced by, so each line instead carries its identifiers whole
+and greppable.
+
 ## Observability Settings
 
 Tracing is bootstrapped in both runtime modes: the SDK serve runtime initializes it on

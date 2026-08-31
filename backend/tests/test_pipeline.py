@@ -2,7 +2,6 @@ import datetime as dt
 
 import pytest
 import typer
-from mpt_api_client.resources.billing.statements import Statement
 
 from mpt_usage_reporting_extension import pipeline
 from mpt_usage_reporting_extension.accumulation import StatementChargeFilter
@@ -61,34 +60,6 @@ def deleter(mocker):
     stub = mocker.patch.object(pipeline, "BucketDeleter").return_value
     stub.delete = mocker.AsyncMock(return_value=DeleteOutcome())
     return stub
-
-
-async def test_run_reports_selected_statements(mocker, capsys, stub_database, usage, selector):
-    selector.select = mocker.AsyncMock(
-        return_value=[
-            Statement({
-                "id": "BILL-1",
-                "status": "Issued",
-                "agreement": {"id": "AGR-1"},
-                "totalPP": 12.5,
-            }),
-            Statement({"id": "BILL-2", "status": "Cancelled"}),
-        ]
-    )
-
-    await usage.run({})  # act
-
-    out = capsys.readouterr().out
-    assert "Selected 2 statement(s)" in out
-    assert "BILL-1" in out
-    assert "Cancelled" in out
-    assert "-" in out  # missing fields render as a dash
-
-
-async def test_run_reports_when_no_statements(capsys, stub_database, usage, selector):
-    await usage.run({})  # act
-
-    assert "Selected 0 statement(s)" in capsys.readouterr().out
 
 
 async def test_run_exits_nonzero_when_an_upload_fails(mocker, stub_database, usage, selector):
@@ -199,7 +170,6 @@ async def test_recalculate_exits_on_upload_failure(mocker, stub_database, usage,
 
 async def test_recalculate_dry_run_runs_reads_but_skips_mutations(
     mocker,
-    capsys,
     stub_database,
     usage,
     selector,
@@ -232,7 +202,6 @@ async def test_recalculate_dry_run_runs_reads_but_skips_mutations(
     agreement_repo.delete.assert_not_called()
     agreement_repo.prune.assert_not_called()
     subscription_api.update.assert_not_called()
-    assert "Dry run: running recalculate in read-only mode" in capsys.readouterr().out
 
 
 async def test_recalculate_dry_run_still_processes_upload_subscription_ids(

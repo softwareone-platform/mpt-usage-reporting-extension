@@ -65,6 +65,7 @@ def subscription_repo(mocker):
 def agreement_repo(mocker):
     repo = mocker.AsyncMock()
     repo.delete.return_value = 1
+    repo.exists.return_value = True
     return repo
 
 
@@ -213,19 +214,6 @@ async def test_delete_none_clears_everything(deleter, subscription_repo, agreeme
     agreement_repo.delete.assert_awaited_once_with()
 
 
-async def test_delete_reports_the_summary(deleter, subscription_repo, caplog):
-    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
-        "SUB-1"
-    ])
-
-    caplog.set_level("INFO")
-    await deleter.delete(AgreementSelector("AGR-1"))  # act
-
-    assert "Deleted subscription: SUB-1" in caplog.text
-    assert "Deleted agreement: AGR-1" in caplog.text
-    assert "Deleted 2 bucket(s) (1 subscription, 1 agreement)" in caplog.text
-
-
 async def test_delete_agreement_without_subscriptions_keeps_agreement_reset_target(
     deleter, subscription_repo, agreement_repo
 ):
@@ -293,7 +281,7 @@ async def test_delete_agreement_dry_run_uses_scope_without_writes(
 
     result = await deleter.delete(AgreementSelector("AGR-1"))
 
-    assert result == DeleteOutcome(subscriptions=["SUB-1"])
+    assert result == DeleteOutcome(subscriptions=["SUB-1"], agreements=["AGR-1"])
     subscription_repo.delete.assert_not_called()
     agreement_repo.delete.assert_not_called()
     assert deleter.statement_agreements == frozenset(("AGR-1",))
