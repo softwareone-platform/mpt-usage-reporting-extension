@@ -74,7 +74,7 @@ secrets:
 cronjobs:
   subscription-usage:
     serviceAccountName: mpt-extension-usage-reporting-sa
-    image: mpt-extension-usage-reporting
+    image: nlpapp0336cre.azurecr.io/mpt-extension-usage-reporting
     schedule: "0 2 * * *"
     command:
       - mpt-billing-subscription-usage
