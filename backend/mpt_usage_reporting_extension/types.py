@@ -4,6 +4,14 @@ from calendar import Month as CalendarMonth
 Year = int
 Month = CalendarMonth
 
+MIN_STORABLE_YEAR = 1000
+MAX_STORABLE_YEAR = 9999
+
+
+def is_storable_year(year: Year) -> bool:
+    """Return whether the year fits the accumulation tables' ``year`` CHECK constraint."""
+    return MIN_STORABLE_YEAR <= year <= MAX_STORABLE_YEAR
+
 
 class Command(enum.StrEnum):
     """The CLI commands whose executions are tracked."""

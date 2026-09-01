@@ -7,7 +7,7 @@ from typing import Any, NamedTuple, Self
 from mpt_api_client.resources.billing.statement_charges import StatementCharge
 
 from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
-from mpt_usage_reporting_extension.types import Month, Year
+from mpt_usage_reporting_extension.types import Month, Year, is_storable_year
 
 _AGREEMENT_ID = "agreement.id"
 _SUBSCRIPTION_ID = "subscription.id"
@@ -15,7 +15,8 @@ _CHARGE_PERIOD_END = "period.end"
 _STATEMENT_CANCELLED_AT = "statement.audit.cancelled.at"
 _STATEMENT_ISSUED_AT = "statement.audit.issued.at"
 _UNKNOWN_ID = "-"
-_UNKNOWN2026_MONTH: tuple[None, None] = (None, None)
+_UNKNOWN_YEAR_MONTH: tuple[None, None] = (None, None)
+_DATE_PATHS = (_CHARGE_PERIOD_END, _STATEMENT_CANCELLED_AT, _STATEMENT_ISSUED_AT)
 
 
 def read_path(charge: StatementCharge, path: str) -> str | None:
@@ -45,24 +46,34 @@ class StatementChargeFilter:
         return read_path(charge, _SUBSCRIPTION_ID) in self.subscription_ids
 
 
-def _year_month(charge: StatementCharge) -> tuple[Year | None, Month | None]:
-    """Derive ``(year, month)`` from the charge's billing period end.
+def _plausible_year_month(raw: str | None) -> tuple[Year, Month] | None:
+    """Parse an ISO timestamp into ``(year, month)``, or ``None`` when it is unusable.
 
-    Falls back to the owning statement's cancelled/issued date when the charge has no
-    period, and returns ``(None, None)`` when nothing is present or parseable.
+    The platform serializes an absent date as the ``0001-01-01T00:00:00.000Z`` sentinel, which
+    parses cleanly but means nothing, so any year outside the storable range counts as unusable.
     """
-    raw = (
-        read_path(charge, _CHARGE_PERIOD_END)
-        or read_path(charge, _STATEMENT_CANCELLED_AT)
-        or read_path(charge, _STATEMENT_ISSUED_AT)
-    )
     if raw is None:
-        return _UNKNOWN2026_MONTH
+        return None
     try:
         moment = dt.datetime.fromisoformat(raw)
     except ValueError:
-        return _UNKNOWN2026_MONTH
+        return None
+    if not is_storable_year(moment.year):
+        return None
     return moment.year, Month(moment.month)
+
+
+def _year_month(charge: StatementCharge) -> tuple[Year | None, Month | None]:
+    """Derive ``(year, month)`` from the charge's billing period end.
+
+    Falls back to the owning statement's cancelled/issued date when the charge has no usable
+    period, and returns ``(None, None)`` when no candidate is present, parseable and plausible.
+    """
+    for path in _DATE_PATHS:
+        found = _plausible_year_month(read_path(charge, path))
+        if found is not None:
+            return found
+    return _UNKNOWN_YEAR_MONTH
 
 
 class AccumulationKey(NamedTuple):
@@ -116,6 +127,12 @@ class ChargeAccumulation:
     def key(self) -> AccumulationKey:
         """Return the accumulation key identifying this bucket."""
         return AccumulationKey(self.agreement_id, self.subscription_id, self.year, self.month)
+
+    def storable_period(self) -> tuple[Year, Month] | None:
+        """Return this bucket's ``(year, month)``, or None when the tables cannot store it."""
+        if self.year is None or self.month is None:
+            return None
+        return (self.year, self.month) if is_storable_year(self.year) else None
 
 
 @dataclass

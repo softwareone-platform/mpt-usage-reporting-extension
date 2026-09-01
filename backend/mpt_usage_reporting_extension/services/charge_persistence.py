@@ -40,7 +40,7 @@ class PersistReport:
         skipped = self._outcome.skipped
         return (
             f"{verb} {subscriptions} subscription and {agreements} agreement "
-            f"bucket(s), skipped {skipped} without a billing month"
+            f"bucket(s), skipped {skipped} without a storable billing month"
         )
 
 
@@ -83,20 +83,24 @@ class AccumulationPersister:
         agreement_ids: frozenset[str] | None,
         outcome: PersistOutcome,
     ) -> None:
-        if bucket.year is None or bucket.month is None:
+        period = bucket.storable_period()
+        if period is None:
             outcome.skipped += 1
             logger.warning(
-                "Skipping persistence for bucket without a billing month "
-                "(agreement=%s, subscription=%s)",
+                "Skipping persistence for bucket without a storable billing month "
+                "(agreement=%s, subscription=%s, year=%s, month=%s)",
                 sanitize_log_value(bucket.agreement_id),
                 sanitize_log_value(bucket.subscription_id),
+                bucket.year,
+                bucket.month,
             )
             return
+        year, month = period
         charge = Charge(
             subscription_id=bucket.subscription_id,
             agreement_id=bucket.agreement_id,
-            year=bucket.year,
-            month=bucket.month,
+            year=year,
+            month=month,
             ppx1=bucket.ppx1,
             spx1=bucket.spx1,
         )
