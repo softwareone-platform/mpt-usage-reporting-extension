@@ -1,32 +1,27 @@
-import typer
-from rich.console import Console
-from rich.table import Table
+import logging
 
 from mpt_usage_reporting_extension.persistence.models import ExecutionRecord
+from mpt_usage_reporting_extension.utils import sanitize_log_value
 
-_HEADERS = ("Command", "Started At", "Completed At", "Status")
+logger = logging.getLogger(__name__)
 
 
 class StatusReport:
-    """Render recent command executions as a console table."""
+    """Log recent command executions, one line per execution."""
 
     def __init__(self, executions: list[ExecutionRecord]) -> None:
         self._executions = executions
 
     def render(self) -> None:
-        """Print the recent executions table, or a notice when there are none."""
+        """Log the recent executions, or a notice when there are none."""
         if not self._executions:
-            typer.echo("No command executions recorded yet.")
+            logger.info("No command executions recorded yet.")
             return
-        Console().print(self._table())
-
-    def _table(self) -> Table:
-        table = Table(*_HEADERS)
         for execution in self._executions:
-            table.add_row(
-                execution.command,
-                execution.started_at,
-                execution.completed_at or "-",
-                execution.status,
+            logger.info(
+                "command=%s started=%s completed=%s status=%s",
+                sanitize_log_value(execution.command),
+                sanitize_log_value(execution.started_at),
+                sanitize_log_value(execution.completed_at or ""),
+                sanitize_log_value(execution.status),
             )
-        return table

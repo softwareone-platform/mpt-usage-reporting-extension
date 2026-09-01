@@ -1,6 +1,7 @@
 import contextlib
 import datetime as dt
 import functools
+import logging
 import sys
 import traceback
 from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
@@ -42,8 +43,12 @@ from mpt_usage_reporting_extension.services.execution_tracker import (
     StatementProcessingRecorder,
 )
 from mpt_usage_reporting_extension.services.statements import StatementReport, StatementSelector
+from mpt_usage_reporting_extension.steps import logged_step
 from mpt_usage_reporting_extension.types import Command, Month
-from mpt_usage_reporting_extension.utils import last_month
+from mpt_usage_reporting_extension.utils import last_month, sanitize_id, scope_label
+from mpt_usage_reporting_extension.window import RunWindow
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -75,8 +80,10 @@ class UsageReportingPipeline:  # noqa: WPS214
             ),
         },
     )
+    @logged_step("run")
     async def run(self, parameters: Mapping[str, object]) -> None:
         """Collect charges, persist them, update estimates, then prune old rows."""
+        self._log_inputs(Command.RUN)
         await self._tracked(Command.RUN, parameters, self._run)
 
     @trace_span(
@@ -90,6 +97,7 @@ class UsageReportingPipeline:  # noqa: WPS214
             ),
         },
     )
+    @logged_step("recalculate")
     async def recalculate(
         self, scope: Selector | None, parameters: Mapping[str, object], *, dry_run: bool = False
     ) -> None:
@@ -105,9 +113,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         When ``dry_run`` is enabled, every read/compute stage still runs, but all DB delete/upsert/
         prune actions and subscription estimate updates are replaced by no-ops.
         """
-        if dry_run:
-            typer.echo("Dry run: running recalculate in read-only mode (no writes or updates).")
-
+        self._log_inputs(Command.RECALCULATE, scope, dry_run=dry_run)
         await self._tracked(
             Command.RECALCULATE,
             parameters,
@@ -115,6 +121,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         )
 
     @trace_span("usage_reporting.reset")
+    @logged_step("reset")
     async def reset(
         self,
         scope: Selector | None,
@@ -152,6 +159,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         return await self._reset_products(deleter)
 
     @trace_span("usage_reporting.select_statements")
+    @logged_step("select_statements")
     async def select_statements(self, agreement_ids: tuple[str, ...] = ()) -> list[Statement]:
         """Select the run window's statements and render the statement report.
 
@@ -172,6 +180,7 @@ class UsageReportingPipeline:  # noqa: WPS214
             ),
         },
     )
+    @logged_step("accumulate_charges")
     async def accumulate_charges(
         self, statements: list[Statement], recorder: StatementProcessingRecorder
     ) -> Iterable[ChargeAccumulation]:
@@ -184,6 +193,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         return totals.accumulations.values()
 
     @trace_span("usage_reporting.persist")
+    @logged_step("persist")
     async def persist(
         self,
         accumulations: Iterable[ChargeAccumulation],
@@ -205,6 +215,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         ).persist(accumulations, agreement_ids)
 
     @trace_span("usage_reporting.update_estimates")
+    @logged_step("update_estimates")
     async def update_estimates(
         self,
         accumulations: Iterable[ChargeAccumulation],
@@ -228,6 +239,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         return report
 
     @trace_span("usage_reporting.prune")
+    @logged_step("cleanup")
     async def cleanup(
         self,
         subscription_repo: SubscriptionAccumulationRepository,
@@ -242,6 +254,30 @@ class UsageReportingPipeline:  # noqa: WPS214
             agreement_repo,
             dry_run=dry_run,
         ).cleanup(today.year, Month(today.month))
+
+    def _log_inputs(
+        self, command: Command, scope: Selector | None = None, *, dry_run: bool = False
+    ) -> None:
+        """Log the resolved inputs a command runs with, before any work starts."""
+        logger.info(
+            "Running %s window=%s products=%s seller=%s scope=%s dry_run=%s",
+            command,
+            self._window_label(self._ctx.window),
+            ",".join(self._ctx.product_ids) or "-",
+            sanitize_id(self._ctx.seller_id) or "-",
+            scope_label(scope),
+            dry_run,
+        )
+        if dry_run:
+            logger.info("Dry run: read-only mode, no writes or estimate updates will be made.")
+
+    def _window_label(self, window: RunWindow | None) -> str:
+        """Render the run window for the inputs line; a ``None`` window bounds nothing."""
+        if window is None:
+            return "every date"
+        start = window.start.date().isoformat()
+        end = window.end.date().isoformat()
+        return f"{start}..{end}"
 
     async def _reset_and_refill(
         self,

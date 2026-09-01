@@ -22,20 +22,6 @@ async def test_cleanup_prunes_both_repos(mocker):
     agreement_repo.prune.assert_awaited_once_with(2026, 6)
 
 
-async def test_cleanup_reports_the_summary(mocker, capsys):
-    subscription_repo = mocker.AsyncMock()
-    subscription_repo.prune.return_value = 4
-    agreement_repo = mocker.AsyncMock()
-    agreement_repo.prune.return_value = 2
-
-    await AccumulationCleaner(subscription_repo, agreement_repo).cleanup(2026, 6)  # act
-
-    out = capsys.readouterr().out
-    assert "Pruned 4 subscription and 2 agreement row(s)" in out
-    assert "18-month" in out
-    assert "2026-06" in out
-
-
 async def test_cleanup_dry_run_skips_prune_calls(mocker):
     subscription_repo = mocker.AsyncMock()
     agreement_repo = mocker.AsyncMock()

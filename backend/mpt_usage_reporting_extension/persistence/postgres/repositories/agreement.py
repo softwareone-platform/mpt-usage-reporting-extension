@@ -39,3 +39,7 @@ class AgreementAccumulationRepository:
         """Delete agreement buckets for the given scope (no scope deletes every bucket)."""
         equals = {} if agreement_id is None else {"agreement_id": agreement_id}
         return await self.engine.delete(**equals)
+
+    async def exists(self, agreement_id: str) -> bool:
+        """Whether any bucket is stored for the agreement."""
+        return await self.engine.exists(agreement_id=agreement_id)

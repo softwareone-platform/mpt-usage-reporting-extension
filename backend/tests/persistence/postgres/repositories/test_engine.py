@@ -205,3 +205,19 @@ async def test_distinct_filters_by_equals(
     ]  # act
 
     assert result == ["SUB-1"]
+
+
+async def test_exists_without_a_filter_reports_any_stored_row(
+    accumulation_engine, key_fields, decimal_first, decimal_zero
+):
+    await accumulation_engine.accumulate(ppx1=decimal_first, spx1=decimal_zero, **key_fields)
+
+    result = await accumulation_engine.exists()
+
+    assert result is True
+
+
+async def test_exists_without_a_filter_is_false_for_an_empty_table(accumulation_engine):
+    result = await accumulation_engine.exists()
+
+    assert result is False

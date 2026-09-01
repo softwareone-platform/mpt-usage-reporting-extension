@@ -1,17 +1,26 @@
 import datetime as dt
-from collections.abc import AsyncIterator, Iterable
+from collections.abc import AsyncIterator, Collection, Iterable
 from decimal import Decimal
 from uuid import uuid4
 
 from psycopg import AsyncConnection, AsyncServerCursor, sql
 from psycopg.rows import DictRow
 
+_WHERE = sql.SQL(" WHERE ")
 RETENTION_MONTHS = 18  # cleanup keeps this many trailing months (buffer for delayed billing)
 
 
 def utc_now() -> dt.datetime:
     """Return the current UTC time as an aware datetime without microseconds."""
     return dt.datetime.now(dt.UTC).replace(microsecond=0)
+
+
+def _with_filter(statement: sql.Composable, equals: Collection[str]) -> sql.Composed:
+    """Append the equals filter to the statement as a WHERE clause, or leave it unfiltered."""
+    composed = sql.Composed([statement])
+    if not equals:
+        return composed
+    return composed + _WHERE + _where_clause(equals)
 
 
 def _where_clause(columns: Iterable[str]) -> sql.Composed:
@@ -60,10 +69,8 @@ class AccumulationEngine:  # noqa: WPS214  # one method per persistence operatio
     async def delete(self, **equals: object) -> int:
         """Delete rows matching the equals filter; with no filter, delete every row."""
         delete_sql = sql.SQL("DELETE FROM {table}").format(table=sql.Identifier(self.table))
-        if equals:
-            delete_sql += sql.SQL(" WHERE ") + _where_clause(equals)
         async with self.connection.cursor() as cursor:
-            await cursor.execute(delete_sql, equals)
+            await cursor.execute(_with_filter(delete_sql, equals), equals)
             deleted: int = cursor.rowcount
         return deleted
 
@@ -78,6 +85,14 @@ class AccumulationEngine:  # noqa: WPS214  # one method per persistence operatio
             await cursor.execute(select_sql, {"day": day})
             async for row in cursor:
                 yield row
+
+    async def exists(self, **equals: object) -> bool:
+        """Whether any row matches the equals filter."""
+        select_sql = sql.SQL("SELECT 1 FROM {table}").format(table=sql.Identifier(self.table))
+        exists_sql = _with_filter(select_sql, equals) + sql.SQL(" LIMIT 1")
+        async with self.connection.cursor() as cursor:
+            await cursor.execute(exists_sql, equals)
+            return await cursor.fetchone() is not None
 
     async def distinct(self, column: str, **equals: object) -> AsyncIterator[object]:
         """Yield each distinct value of column, optionally filtered by equals."""
@@ -123,6 +138,5 @@ class AccumulationEngine:  # noqa: WPS214  # one method per persistence operatio
         select_sql = sql.SQL("SELECT DISTINCT {column} FROM {table}").format(
             column=sql.Identifier(column), table=sql.Identifier(self.table)
         )
-        if equals:
-            select_sql += sql.SQL(" WHERE ") + _where_clause(equals)
-        return select_sql + sql.SQL(" ORDER BY {column}").format(column=sql.Identifier(column))
+        ordering = sql.SQL(" ORDER BY {column}").format(column=sql.Identifier(column))
+        return _with_filter(select_sql, equals) + ordering

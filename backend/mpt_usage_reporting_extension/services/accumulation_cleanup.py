@@ -3,7 +3,6 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-import typer
 from mpt_extension_sdk.observability import trace_span
 
 from mpt_usage_reporting_extension.persistence.postgres.database import (
@@ -33,22 +32,28 @@ class CleanupOutcome:
 class CleanupReport:
     """Render the outcome of a retention cleanup as a one-line summary."""
 
-    def __init__(self, outcome: CleanupOutcome) -> None:
+    def __init__(self, outcome: CleanupOutcome, *, dry_run: bool = False) -> None:
         self._outcome = outcome
+        self._dry_run = dry_run
 
     def render(self) -> None:
-        """Print the summary line for the cleanup."""
-        typer.echo(self._summary())
+        """Log the summary line for the cleanup."""
+        logger.info(self._summary())
 
     def _summary(self) -> str:
+        window = self._window_label()
+        if self._dry_run:
+            # The prune never ran, so there is no count to report - claiming 0 would read
+            # as "nothing to prune" for a window that may hold thousands of rows.
+            return f"Would prune the subscription and agreement rows {window} (count not measured)"
         subscription = self._outcome.subscription_deleted
         agreement = self._outcome.agreement_deleted
+        return f"Pruned {subscription} subscription and {agreement} agreement row(s) {window}"
+
+    def _window_label(self) -> str:
         year = self._outcome.year
         month = str(self._outcome.month).zfill(2)
-        return (
-            f"Pruned {subscription} subscription and {agreement} agreement row(s) "
-            f"older than the rolling 18-month window ending {year}-{month}"
-        )
+        return f"older than the rolling 18-month window ending {year}-{month}"
 
 
 class AccumulationCleaner:
@@ -74,14 +79,7 @@ class AccumulationCleaner:
             subscription_deleted = await self._subscription_repo.prune(year, month)
             agreement_deleted = await self._agreement_repo.prune(year, month)
         outcome = CleanupOutcome(year, month, subscription_deleted, agreement_deleted)
-        logger.info(
-            "Pruned %d subscription and %d agreement accumulation row(s) older than %d-%02d",
-            subscription_deleted,
-            agreement_deleted,
-            year,
-            month,
-        )
-        CleanupReport(outcome).render()
+        CleanupReport(outcome, dry_run=self._dry_run).render()
         return outcome
 
 
