@@ -59,11 +59,15 @@ any API work. Each stage is a service constructed with only the dependencies it 
 5. `ChargeAccumulator` (`accumulation.py`) groups charges by
    `AccumulationKey` = `(agreement_id, subscription_id, year, month)` into `ChargeTotals` —
    the month comes from the charge's billing `period.end`, falling back to the statement's
-   cancelled/issued date when the charge has no period. Deploying a bucketing-rule change
-   requires a full-scope historical recalculate so persisted buckets and pushed estimates are
-   regrouped under the new keying — see
+   cancelled/issued date when the charge has no usable period. The platform returns an absent
+   date as the `0001-01-01T00:00:00.000Z` sentinel rather than as `null`, so a date outside the
+   storable year range counts as absent and the next candidate is used. Deploying a
+   bucketing-rule change requires a full-scope historical recalculate so persisted buckets and
+   pushed estimates are regrouped under the new keying — see
    [migrations.md](migrations.md#full-recalculate-data-migrations).
 6. `AccumulationPersister` (`services/charge_persistence.py`) upserts the totals into PostgreSQL.
+   A bucket with no storable billing month is skipped and counted, never written, so one
+   undatable charge cannot abort the run on the tables' year `CHECK` constraint.
 7. `EstimatesUploader` (`services/estimates_uploader.py`) computes each real subscription's
    estimate from PostgreSQL — anchor-month `PPxM`/`SPxM` and trailing-12-month
    `PPxY`/`SPxY` sums, anchored on the previous (latest completed) calendar month. A figure

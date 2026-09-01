@@ -38,6 +38,18 @@ async def test_persist_skips_bucket_without_month(mocker):
     agreement_repo.accumulate.assert_not_called()
 
 
+async def test_persist_skips_bucket_outside_storable_year_range(mocker):
+    # a 0001-01-01 sentinel period would otherwise violate the year CHECK constraint
+    sentinel = ChargeAccumulation("AGR-1", "SUB-1", 1, 1, Decimal("1.00"))
+    subscription_repo = mocker.AsyncMock()
+    agreement_repo = mocker.AsyncMock()
+
+    await AccumulationPersister(subscription_repo, agreement_repo).persist([sentinel])  # act
+
+    subscription_repo.accumulate.assert_not_called()
+    agreement_repo.accumulate.assert_not_called()
+
+
 async def test_persist_restricts_agreement_writes(mocker):
     reset = ChargeAccumulation("AGR-1", "SUB-1", 2026, 6, Decimal("1.50"))
     sibling = ChargeAccumulation("AGR-2", "SUB-2", 2026, 6, Decimal("1.00"))
