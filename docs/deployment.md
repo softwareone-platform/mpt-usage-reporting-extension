@@ -51,6 +51,28 @@ drawn as a table: a table sizes itself to the terminal — 80 columns off a TTY 
 the very ids a run has to be traced by, so each line instead carries its identifiers whole
 and greppable.
 
+### Estimate Upload Report
+
+`run` and `recalculate` log one line per subscription estimate they process, applied or failed
+(`UploadOutcome.line()` in
+[`backend/mpt_usage_reporting_extension/services/estimates_uploader.py`](../backend/mpt_usage_reporting_extension/services/estimates_uploader.py)):
+
+```text
+subscription=SUB-1234-5678 PPxM=12.3400 SPxM=15.0000 PPxY=148.0800 SPxY=180.0000 status=OK
+subscription=SUB-1234-5678 PPxM=null SPxM=null PPxY=148.0800 SPxY=180.0000 status=DRY-RUN
+subscription=SUB-1234-5678 status=FAILED error="value must be 9999.000 or less"
+```
+
+- `subscription` is the MPT subscription id the estimate belongs to.
+- The four price fields are the computed estimate, each to four decimal places. A figure with
+  no backing buckets renders as `null` rather than a fabricated `0`.
+- `status` must be one of `OK` (the `PUT` was applied), `FAILED` (the upload was rejected or
+  raised), or `DRY-RUN` (the estimate was computed and the `PUT` suppressed). Only
+  `recalculate` accepts `--dry-run`, so `run` never emits a `DRY-RUN` line.
+- A `FAILED` line carries no price fields and appends `error=` with the failure reason — an MPT
+  API rejection or an unexpected exception, both rendered as the exception's own text. Values
+  holding whitespace are quoted, so the pairs on a line stay separable.
+
 ## Observability Settings
 
 Tracing is bootstrapped in both runtime modes: the SDK serve runtime initializes it on
