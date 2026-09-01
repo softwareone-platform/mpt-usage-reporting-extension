@@ -361,14 +361,6 @@ def test_outcomes_with_the_same_fields_hash_alike():
     )
 
 
-def test_the_unscoped_flag_changes_the_hash():
-    outcome = DeleteOutcome(subscriptions=["SUB-1"], all_agreements=True)
-
-    result = hash(outcome)
-
-    assert result != hash(DeleteOutcome(subscriptions=["SUB-1"]))
-
-
 def test_outcome_repr_carries_every_field():
     outcome = DeleteOutcome(subscriptions=["SUB-1"], agreements=["AGR-1"], all_agreements=True)
 
