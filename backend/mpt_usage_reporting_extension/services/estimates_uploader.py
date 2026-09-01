@@ -67,16 +67,16 @@ class UploadOutcome:
         """
         subscription = sanitize_log_value(self.subscription_id)
         if self.failed or self.estimate is None:
-            return f"{subscription} FAILED{self._detail()}"
+            return f"subscription={subscription} status=FAILED{self._detail()}"
         prices = self.estimate.to_dict()
         labels = (f"{key}={self._price_label(prices[key])}" for key in _PRICE_KEYS)
         body = " ".join(labels)
         status = "DRY-RUN" if self.dry_run else "OK"
-        return f"{subscription} {body} {status}"
+        return f"subscription={subscription} {body} status={status}"
 
     def _detail(self) -> str:
         """The failure reason appended to a failed outcome's line, empty when there is none."""
-        return f": {sanitize_log_value(self.error)}" if self.error else ""
+        return f" error={sanitize_log_value(self.error)}" if self.error else ""
 
     @staticmethod
     def _price_label(amount: float | None) -> str:  # noqa: WPS602

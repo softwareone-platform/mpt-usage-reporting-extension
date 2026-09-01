@@ -209,7 +209,7 @@ async def test_delete_none_clears_everything(deleter, subscription_repo, agreeme
     ])
     result = await deleter.delete(None)
 
-    assert result == DeleteOutcome(subscriptions=["SUB-1"])
+    assert result == DeleteOutcome(subscriptions=["SUB-1"], all_agreements=True)
     subscription_repo.delete.assert_awaited_once_with(subscription_id="SUB-1")
     agreement_repo.delete.assert_awaited_once_with()
 
@@ -261,7 +261,7 @@ async def test_delete_none_dry_run_skips_delete_calls(
 
     result = await deleter.delete(None)
 
-    assert result == DeleteOutcome(subscriptions=["SUB-1"])
+    assert result == DeleteOutcome(subscriptions=["SUB-1"], all_agreements=True)
     subscription_repo.delete.assert_not_called()
     agreement_repo.delete.assert_not_called()
 
@@ -285,3 +285,53 @@ async def test_delete_agreement_dry_run_uses_scope_without_writes(
     subscription_repo.delete.assert_not_called()
     agreement_repo.delete.assert_not_called()
     assert deleter.statement_agreements == frozenset(("AGR-1",))
+
+
+async def test_delete_none_summary_reports_the_whole_agreement_table(
+    deleter, subscription_repo, caplog
+):
+    caplog.set_level("INFO")
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
+        "SUB-1"
+    ])
+
+    await deleter.delete(None)  # act
+
+    assert (
+        "Deleted the stored accumulations of 1 subscription(s) and every stored agreement bucket"
+        in caplog.text
+    )
+
+
+async def test_delete_none_dry_run_summary_reports_the_whole_agreement_table(
+    subscription_repo, agreement_repo, subscriptions, caplog
+):
+    caplog.set_level("INFO")
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
+        "SUB-1"
+    ])
+    deleter = BucketDeleter(
+        subscription_repo,
+        agreement_repo,
+        cast(Any, subscriptions),
+        dry_run=True,
+    )
+
+    await deleter.delete(None)  # act
+
+    assert (
+        "Would delete the stored accumulations of 1 subscription(s) "
+        "and every stored agreement bucket" in caplog.text
+    )
+
+
+async def test_delete_agreement_summary_counts_the_deleted_agreements(
+    deleter, subscription_repo, agreement_repo, caplog
+):
+    caplog.set_level("INFO")
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([])
+    agreement_repo.delete.return_value = 1
+
+    await deleter.delete(AgreementSelector("AGR-9"))  # act
+
+    assert "Deleted the stored accumulations of 0 subscription(s) and 1 agreement(s)" in caplog.text

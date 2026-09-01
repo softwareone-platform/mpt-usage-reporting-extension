@@ -232,6 +232,7 @@ async def test_update_report_flags_failure(mocker, updater, update, year, month,
 
 
 async def test_update_report_flags_unexpected_error(mocker, updater, update, year, month, caplog):
+    caplog.set_level("INFO")
     update.side_effect = [ValueError("boom"), mocker.Mock()]
 
     report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
@@ -239,7 +240,7 @@ async def test_update_report_flags_unexpected_error(mocker, updater, update, yea
     assert report.has_failures
     assert update.call_count == 2
     assert "Unexpected error uploading subscription SUB-1" in caplog.text
-    assert ": boom" in caplog.text
+    assert "subscription=SUB-1 status=FAILED error=boom" in caplog.text
     assert "Traceback" in caplog.text
 
 
@@ -322,3 +323,46 @@ async def test_update_dry_run_skips_api_updates(subscription_repo, subscriptions
 
     subscriptions.update.assert_not_called()
     assert not report.has_failures
+
+
+def test_line_keys_every_field_of_a_successful_upload(estimate):
+    outcome = UploadOutcome("SUB-1", estimate=estimate)
+
+    result = outcome.line()
+
+    assert result == (
+        "subscription=SUB-1 PPxM=5.0000 SPxM=6.0000 PPxY=50.0000 SPxY=60.0000 status=OK"
+    )
+
+
+def test_line_keys_every_field_of_a_dry_run_upload(estimate):
+    outcome = UploadOutcome("SUB-1", estimate=estimate, dry_run=True)
+
+    result = outcome.line()
+
+    assert result == (
+        "subscription=SUB-1 PPxM=5.0000 SPxM=6.0000 PPxY=50.0000 SPxY=60.0000 status=DRY-RUN"
+    )
+
+
+def test_line_keys_the_status_of_a_failure_without_a_reason():
+    outcome = UploadOutcome("SUB-1", failed=True)
+
+    result = outcome.line()
+
+    assert result == "subscription=SUB-1 status=FAILED"
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ("boom", "subscription=SUB-1 status=FAILED error=boom"),
+        ("Bad Request", 'subscription=SUB-1 status=FAILED error="Bad Request"'),
+    ],
+)
+def test_line_keys_the_failure_reason(error, expected):
+    outcome = UploadOutcome("SUB-1", failed=True, error=error)
+
+    result = outcome.line()
+
+    assert result == expected

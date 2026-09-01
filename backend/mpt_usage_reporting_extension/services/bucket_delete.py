@@ -28,32 +28,45 @@ _SELLER_ID = "seller.id"
 
 
 class DeleteOutcome:
-    """Ordered subscription ids deleted by the scope reset."""
+    """Ordered subscription ids deleted by the scope reset.
 
-    __slots__ = ("agreements", "subscriptions")
+    ``agreements`` carries the agreement ids whose buckets were deleted. An unscoped delete drops
+    every agreement bucket without enumerating the ids, so it sets ``all_agreements`` and leaves
+    ``agreements`` empty rather than under-reporting the deletion as zero agreements.
+    """
+
+    __slots__ = ("agreements", "all_agreements", "subscriptions")
 
     def __init__(
         self,
         subscriptions: list[str] | None = None,
         agreements: list[str] | None = None,
+        *,
+        all_agreements: bool = False,
     ) -> None:
         self.subscriptions = [] if subscriptions is None else list(subscriptions)
         self.agreements = [] if agreements is None else list(agreements)
+        self.all_agreements = all_agreements
 
     @override
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, DeleteOutcome):
             return NotImplemented
-        return self.subscriptions == other.subscriptions and self.agreements == other.agreements
+        return (
+            self.subscriptions == other.subscriptions
+            and self.agreements == other.agreements
+            and self.all_agreements == other.all_agreements
+        )
 
     @override
     def __hash__(self) -> int:
-        return hash((tuple(self.subscriptions), tuple(self.agreements)))
+        return hash((tuple(self.subscriptions), tuple(self.agreements), self.all_agreements))
 
     @override
     def __repr__(self) -> str:
         return (
-            f"DeleteOutcome(subscriptions={self.subscriptions!r}, agreements={self.agreements!r})"
+            f"DeleteOutcome(subscriptions={self.subscriptions!r}, "
+            f"agreements={self.agreements!r}, all_agreements={self.all_agreements!r})"
         )
 
     @classmethod
@@ -61,11 +74,14 @@ class DeleteOutcome:
         cls,
         subscriptions: AsyncIterator[str],
         agreements: list[str] | None = None,
+        *,
+        all_agreements: bool = False,
     ) -> "DeleteOutcome":
         """Build an outcome by consuming a stream of deleted subscription ids."""
         return cls(
             subscriptions=[subscription_id async for subscription_id in subscriptions],
             agreements=[] if agreements is None else agreements,
+            all_agreements=all_agreements,
         )
 
 
@@ -98,11 +114,16 @@ class DeleteReport:
 
     def _summary(self) -> str:
         subscriptions = len(self._outcome.subscriptions)
-        agreements = len(self._outcome.agreements)
         return (
             f"{self._verb()} the stored accumulations of {subscriptions} subscription(s) "
-            f"and {agreements} agreement(s)"
+            f"and {self._agreement_scope()}"
         )
+
+    def _agreement_scope(self) -> str:
+        """The agreement half of the summary: the ids counted, or the whole table when unscoped."""
+        if self._outcome.all_agreements:
+            return "every stored agreement bucket"
+        return f"{len(self._outcome.agreements)} agreement(s)"
 
 
 class BucketDeleter:  # noqa: WPS214
@@ -168,7 +189,8 @@ class BucketDeleter:  # noqa: WPS214
 
     async def _delete_all(self) -> DeleteOutcome:
         outcome = await DeleteOutcome.from_subscriptions(
-            self._delete_subscription_ids(self._subscription_repo.subscriptions_by_agreement())
+            self._delete_subscription_ids(self._subscription_repo.subscriptions_by_agreement()),
+            all_agreements=True,
         )
         if not self._dry_run:
             await self._agreement_repo.delete()
