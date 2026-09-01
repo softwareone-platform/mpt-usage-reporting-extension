@@ -213,6 +213,57 @@ async def test_accumulate_parses_offset_period_end(statement_charge_factory, sta
     assert ("AGR-1", "SUB-1", 2025, 1) in result.accumulations
 
 
+async def test_accumulate_ignores_sentinel_period_end(statement_charge_factory, statement_factory):
+    # the platform returns an absent period as the .NET DateTime.MinValue sentinel
+    statement = statement_factory(issued="2026-08-15T10:00:00Z")
+    charge = statement_charge_factory(
+        "AGR-1",
+        "SUB-1",
+        statement=statement,
+        price=("1.00", "1.00"),
+        period_end="0001-01-01T00:00:00.000Z",
+    )
+
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+
+    assert ("AGR-1", "SUB-1", 2026, 8) in result.accumulations
+
+
+async def test_accumulate_ignores_sentinel_statement_dates(
+    statement_charge_factory, statement_factory
+):
+    statement = statement_factory(issued="0001-01-01T00:00:00.000Z")
+    charge = statement_charge_factory(
+        "AGR-1",
+        "SUB-1",
+        statement=statement,
+        price=("1.00", "1.00"),
+        period_end="0001-01-01T00:00:00.000Z",
+    )
+
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+
+    bucket = result.accumulations["AGR-1", "SUB-1", None, None]
+    assert bucket.ppx1 == Decimal("1.00")
+
+
+async def test_accumulate_falls_through_unparseable_period_end(
+    statement_charge_factory, statement_factory
+):
+    statement = statement_factory(issued="2026-06-01T10:00:00Z")
+    charge = statement_charge_factory(
+        "AGR-1",
+        "SUB-1",
+        statement=statement,
+        price=("1.00", "1.00"),
+        period_end="not-a-date",
+    )
+
+    result = await ChargeAccumulator().accumulate(_aiter([charge]))
+
+    assert ("AGR-1", "SUB-1", 2026, 6) in result.accumulations
+
+
 async def test_accumulate_prefers_cancelled_over_issued(
     statement_charge_factory, statement_factory
 ):
