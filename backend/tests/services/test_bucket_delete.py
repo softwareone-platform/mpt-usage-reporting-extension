@@ -335,3 +335,47 @@ async def test_delete_agreement_summary_counts_the_deleted_agreements(
     await deleter.delete(AgreementSelector("AGR-9"))  # act
 
     assert "Deleted the stored accumulations of 0 subscription(s) and 1 agreement(s)" in caplog.text
+
+
+def test_outcome_does_not_equal_a_foreign_type():
+    outcome = DeleteOutcome(subscriptions=["SUB-1"])
+
+    result = outcome == "SUB-1"  # act
+
+    assert result is False
+
+
+def test_outcomes_differ_when_only_the_unscoped_flag_differs():
+    outcome = DeleteOutcome(subscriptions=["SUB-1"], all_agreements=True)
+
+    result = outcome == DeleteOutcome(subscriptions=["SUB-1"])  # act
+
+    assert result is False
+
+
+def test_outcomes_with_the_same_fields_hash_alike():
+    outcome = DeleteOutcome(subscriptions=["SUB-1"], agreements=["AGR-1"], all_agreements=True)
+
+    result = hash(outcome)
+
+    assert result == hash(
+        DeleteOutcome(subscriptions=["SUB-1"], agreements=["AGR-1"], all_agreements=True)
+    )
+
+
+def test_the_unscoped_flag_changes_the_hash():
+    outcome = DeleteOutcome(subscriptions=["SUB-1"], all_agreements=True)
+
+    result = hash(outcome)
+
+    assert result != hash(DeleteOutcome(subscriptions=["SUB-1"]))
+
+
+def test_outcome_repr_carries_every_field():
+    outcome = DeleteOutcome(subscriptions=["SUB-1"], agreements=["AGR-1"], all_agreements=True)
+
+    result = repr(outcome)
+
+    assert result == (
+        "DeleteOutcome(subscriptions=['SUB-1'], agreements=['AGR-1'], all_agreements=True)"
+    )
