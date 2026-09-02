@@ -70,11 +70,13 @@ any API work. Each stage is a service constructed with only the dependencies it 
    undatable charge cannot abort the run on the tables' year `CHECK` constraint.
 7. `EstimatesUploader` (`services/estimates_uploader.py`) computes each real subscription's
    estimate from PostgreSQL — anchor-month `PPxM`/`SPxM` and trailing-12-month
-   `PPxY`/`SPxY` sums, anchored on the previous (latest completed) calendar month. A figure
-   with no backing buckets is `null` (never a fabricated 0, which would overwrite a real
-   estimate): the monthly pair when the anchor month has no buckets, all four when the whole
-   window is empty. Present sums are clamped to 0 because credits can push a total negative
-   and MPT rejects negative prices — and
+   `PPxY`/`SPxY` sums, anchored on the previous (latest completed) calendar month. When the
+   anchor month has no buckets — the normal state while that month's billing is still being
+   generated — the monthly pair carries forward from the most recent earlier month in the window
+   that has data, logged per subscription, so an estimate is never wiped just because the anchor
+   month has not been billed yet. A figure with no backing buckets anywhere in the window is
+   `null` (never a fabricated 0, which would overwrite a real estimate). Present sums are
+   clamped to 0 because credits can push a total negative and MPT rejects negative prices — and
    concurrently `PUT`s `{"price": {SPxM, SPxY}}` back to the subscription via the MPT API —
    only the sales prices are sent; the platform recalculates the purchase prices — skipping
    synthetic (`agreement_additional_*`) and dateless buckets. It logs a

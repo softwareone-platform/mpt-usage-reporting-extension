@@ -19,7 +19,7 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 )
 from mpt_usage_reporting_extension.services.helper import as_async_iterator
 from mpt_usage_reporting_extension.types import Month, Year
-from mpt_usage_reporting_extension.utils import sanitize_log_value
+from mpt_usage_reporting_extension.utils import month_ordinal, sanitize_log_value
 
 logger = logging.getLogger(__name__)
 
@@ -145,26 +145,52 @@ class _EstimateCalculator:
         """Fold the trailing-12-month buckets into a PriceEstimate.
 
         Each month in the window is read with an indexed point lookup; absent months are skipped.
-        The anchor month drives PPxM/SPxM; the whole window drives PPxY/SPxY. A figure with no
-        backing buckets is None (uploaded as null), never a fabricated zero: an empty anchor
-        month yields null monthly figures and an empty window an all-null estimate. Credits can
-        push a sum below zero, which MPT rejects, so each present price is floored at 0.
+        The monthly pair comes from the anchor month, or - while the anchor month is still being
+        billed - from the most recent earlier month in the window that has data, so a subscription
+        keeps showing an estimate instead of dropping to null. Only a window with no data at all
+        yields null monthly figures, never a fabricated zero. The whole window drives PPxY/SPxY.
+        Credits can push a sum below zero, which MPT rejects, so each present price is floored at 0.
         """
-        anchor = (year, month)
         window = await self._fetch_window(subscription_id, year, month)
-        rows = [bucket for bucket in window if bucket]
-        monthly = [bucket for bucket in rows if (bucket.year, bucket.month) == anchor]
+        rows = sorted((bucket for bucket in window if bucket), key=self._ordinal)
+        latest = rows[-1] if rows else None
+        self._report_carry_forward(subscription_id, latest, year, month)
         return PriceEstimate(
-            ppxm=self._non_negative_sum(bucket.ppx1 for bucket in monthly) if monthly else None,
-            spxm=self._non_negative_sum(bucket.spx1 for bucket in monthly) if monthly else None,
+            ppxm=self._non_negative_sum((latest.ppx1,)) if latest else None,
+            spxm=self._non_negative_sum((latest.spx1,)) if latest else None,
             ppxy=self._non_negative_sum(bucket.ppx1 for bucket in rows) if rows else None,
             spxy=self._non_negative_sum(bucket.spx1 for bucket in rows) if rows else None,
         )
 
     @staticmethod
+    def _ordinal(bucket: SubscriptionMonthlyAccumulation) -> int:  # noqa: WPS602
+        """Sort key ordering buckets by billing month, most recent last."""
+        return month_ordinal(bucket.year, bucket.month)
+
+    @staticmethod
     def _non_negative_sum(amounts: Iterable[Decimal]) -> Decimal:  # noqa: WPS602
         """Sum the amounts, flooring the total at 0."""
         return max(sum(amounts, Decimal(0)), Decimal(0))
+
+    @staticmethod
+    def _report_carry_forward(  # noqa: WPS602
+        subscription_id: str,
+        latest: SubscriptionMonthlyAccumulation | None,
+        year: Year,
+        month: Month,
+    ) -> None:
+        """Log that an older month's figures stand in for an anchor month with no buckets."""
+        if latest is None or (latest.year, latest.month) == (year, month):
+            return
+        logger.info(
+            "Carrying subscription %s monthly estimate forward from %d-%02d "
+            "(anchor %d-%02d has no buckets)",
+            sanitize_log_value(subscription_id),
+            latest.year,
+            latest.month,
+            year,
+            month,
+        )
 
     async def _fetch_window(
         self, subscription_id: str, year: Year, month: Month
