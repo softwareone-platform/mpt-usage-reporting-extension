@@ -181,7 +181,7 @@ async def test_update_clamps_each_price_independently(mocker, subscriptions, upd
     update.assert_called_once_with("SUB-1", {"price": {"SPxM": 0, "SPxY": 2.0}})
 
 
-async def test_update_uploads_null_monthly_when_anchor_month_has_no_data(
+async def test_update_carries_monthly_forward_when_anchor_month_has_no_data(
     mocker, subscriptions, update, year, month
 ):
     earlier_bucket = _bucket(year, Month.MAY, ppx1="2.50", spx1="3.75")
@@ -192,8 +192,54 @@ async def test_update_uploads_null_monthly_when_anchor_month_has_no_data(
 
     report = await updater.update(["SUB-1"], year, month)  # act
 
-    update.assert_called_once_with("SUB-1", {"price": {"SPxM": None, "SPxY": 3.75}})
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 3.75, "SPxY": 3.75}})
     assert not report.has_failures
+
+
+async def test_update_carries_forward_the_most_recent_month(
+    mocker, subscriptions, update, year, month
+):
+    # both months precede the JUNE anchor, so the newer one (MAY) must supply the monthly pair
+    window = {
+        (year, Month.APRIL): _bucket(year, Month.APRIL, ppx1="1.00", spx1="1.11"),
+        (year, Month.MAY): _bucket(year, Month.MAY, ppx1="2.00", spx1="2.22"),
+    }
+    repo = mocker.AsyncMock()
+    repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
+    updater = EstimatesUploader(repo, subscriptions)
+
+    await updater.update(["SUB-1"], year, month)  # act
+
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 2.22, "SPxY": 3.33}})
+
+
+async def test_update_carries_forward_negative_month_as_zero(
+    mocker, subscriptions, update, year, month
+):
+    negative_bucket = _bucket(year, Month.MAY, ppx1="-2.50", spx1="-3.75")
+    window = {(year, Month.MAY): negative_bucket}
+    repo = mocker.AsyncMock()
+    repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
+    updater = EstimatesUploader(repo, subscriptions)
+
+    await updater.update(["SUB-1"], year, month)  # act
+
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 0, "SPxY": 0}})
+
+
+async def test_update_carries_forward_zero_month_as_zero(
+    mocker, subscriptions, update, year, month
+):
+    # a billed month totalling 0 is real data, so it carries forward as 0 rather than null
+    zero_bucket = _bucket(year, Month.MAY, ppx1=0, spx1=0)
+    window = {(year, Month.MAY): zero_bucket}
+    repo = mocker.AsyncMock()
+    repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
+    updater = EstimatesUploader(repo, subscriptions)
+
+    await updater.update(["SUB-1"], year, month)  # act
+
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 0, "SPxY": 0}})
 
 
 async def test_update_uploads_all_null_when_window_is_empty(
