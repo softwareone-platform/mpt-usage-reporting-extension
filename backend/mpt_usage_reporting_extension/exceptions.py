@@ -20,3 +20,7 @@ class UpstreamStatementError(UpstreamAPIError):
 
 class UpstreamSubscriptionError(UpstreamAPIError):
     """Querying commerce subscriptions failed upstream."""
+
+
+class UpstreamExchangeRateError(UpstreamAPIError):
+    """No usable exchange rate could be resolved for a currency pair."""
