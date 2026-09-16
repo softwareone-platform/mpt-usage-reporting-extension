@@ -10,7 +10,7 @@ resolution-markers = [
 
 [manifest]
 overrides = [
-    { name = "mpt-api-client", specifier = ">=6.1.0" },
+    { name = "mpt-api-client", specifier = ">=7.0.0" },
     { name = "typer", specifier = ">=0.25.0" },
 ]
 
@@ -1352,15 +1352,15 @@ wheels = [
 
 [[package]]
 name = "mpt-api-client"
-version = "6.3.1"
+version = "7.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "httpx-retries" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/f0/6d77d6235801223cfa6a82d13e208469cf12960f4777b841616f64238462/mpt_api_client-6.3.1.tar.gz", hash = "sha256:642f5088c4b2f9608fb70fa9078856423a9096fa118eeede60c6ae9bbb7200f1", size = 65853, upload-time = "2026-06-25T16:05:35.595Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/76/e3b55e37156ea9821899daec81cd8fabc60f98f502c510a612999b5416aa/mpt_api_client-7.0.0.tar.gz", hash = "sha256:b60b830b444c790eb91e1a80024f0f338e838cdc86c6788158f20b44fcfc5769", size = 91490, upload-time = "2026-09-16T13:55:37.308Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/8d/a3ae1ad7836584e4caacae27816666c55858415f2a80390cefa4264be679/mpt_api_client-6.3.1-py3-none-any.whl", hash = "sha256:87cef1feb7d272dcda619818124605381861a633e442334316181ebb36ba18f7", size = 148484, upload-time = "2026-06-25T16:05:34.462Z" },
+    { url = "https://files.pythonhosted.org/packages/03/03/9359e6a29329aa7155dfe213de9f80f8d61190ff6d3a0804532bea4ad8b2/mpt_api_client-7.0.0-py3-none-any.whl", hash = "sha256:e218dce384773d9887b351655b388606ee3c8bb6065deadc8bb047e6419bb68d", size = 177865, upload-time = "2026-09-16T13:55:36.356Z" },
 ]
 
 [[package]]
@@ -1454,7 +1454,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "azure-identity", specifier = "==1.25.*" },
-    { name = "mpt-api-client", specifier = "==6.3.*" },
+    { name = "mpt-api-client", specifier = "==7.0.*" },
     { name = "mpt-extension-contrib-custom-notifications", extras = ["teams"], specifier = "==1.2.*" },
     { name = "mpt-extension-sdk", extras = ["azure-monitor"], specifier = "==6.5.*" },
     { name = "mpt-tool", specifier = "==6.0.*" },

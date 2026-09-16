@@ -70,7 +70,7 @@ class ChargeStreamer:
         """Stream one statement's charges, mapping upstream errors to UpstreamStatementError."""
         client = self._api_service.client.billing.statements
         try:
-            async for charge in client.charges(statement.id).stream():
+            async for charge in client.charges(statement.id).stream_jsonl():
                 charge.statement = statement
                 yield charge
         except MPTError as exc:

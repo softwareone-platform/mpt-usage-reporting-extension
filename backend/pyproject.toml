@@ -7,7 +7,7 @@ requires-python = ">=3.12,<4"
 license = { text = "Apache-2.0 license" }
 dependencies = [
     "azure-identity==1.25.*",
-    "mpt-api-client==6.3.*",
+    "mpt-api-client==7.0.*",
     "mpt-extension-contrib-custom-notifications[teams]==1.2.*",
     "mpt-extension-sdk[azure-monitor]==6.5.*",
     "mpt-tool==6.0.*",
@@ -20,7 +20,7 @@ dependencies = [
 mpt-billing-subscription-usage = "mpt_usage_reporting_extension.cli:main"
 
 [tool.uv]
-override-dependencies = ["typer>=0.25.0", "mpt-api-client>=6.1.0"]
+override-dependencies = ["typer>=0.25.0", "mpt-api-client>=7.0.0"]
 
 [dependency-groups]
 dev = [
