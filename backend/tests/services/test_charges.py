@@ -25,7 +25,7 @@ def recorder(processing_repo):
 
 @pytest.fixture
 def charge_stream(api_service):
-    return _charges(api_service).return_value.stream
+    return _charges(api_service).return_value.stream_jsonl
 
 
 async def _aiter(records):  # noqa: RUF029  # async generator: enables `async for` over a list
@@ -49,7 +49,7 @@ def _charges(api_service):
 
 async def test_stream_calls_endpoint_per_statement(api_service, recorder, statement_factory):
     statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
-    stream = _charges(api_service).return_value.stream
+    stream = _charges(api_service).return_value.stream_jsonl
     stream.side_effect = [_aiter([]), _aiter([])]
 
     await _drain(ChargeStreamer(api_service, recorder).stream(statements))  # act
@@ -63,7 +63,7 @@ async def test_stream_attaches_statement_to_each_charge(
 ):
     statements = [statement_factory("BILL-1"), statement_factory("BILL-2")]
     pages = [[statement_charge_factory(), statement_charge_factory()], [statement_charge_factory()]]
-    stream = _charges(api_service).return_value.stream
+    stream = _charges(api_service).return_value.stream_jsonl
     stream.side_effect = [_aiter(page) for page in pages]
 
     result = await _drain(ChargeStreamer(api_service, recorder).stream(statements))
@@ -76,7 +76,7 @@ async def test_stream_yields_charge_objects(
 ):
     statements = [statement_factory("BILL-1")]
     charges = [statement_charge_factory(), statement_charge_factory()]
-    stream = _charges(api_service).return_value.stream
+    stream = _charges(api_service).return_value.stream_jsonl
     stream.side_effect = [_aiter(charges)]
 
     result = await _drain(ChargeStreamer(api_service, recorder).stream(statements))
@@ -86,7 +86,7 @@ async def test_stream_yields_charge_objects(
 
 def test_stream_is_lazy(api_service, recorder, statement_factory):
     statements = [statement_factory("BILL-1")]
-    stream = _charges(api_service).return_value.stream
+    stream = _charges(api_service).return_value.stream_jsonl
     stream.side_effect = [_aiter([])]
 
     ChargeStreamer(api_service, recorder).stream(statements)  # act
