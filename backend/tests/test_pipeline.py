@@ -272,7 +272,47 @@ async def test_recalculate_persists_reset_only(
     persisted, agreement_ids = persister.persist.call_args.args
     assert [bucket.subscription_id for bucket in persisted] == ["SUB-1"]
     assert agreement_ids == frozenset(("AGR-1",))
-    assert accumulate.await_args.args[1].subscription_ids == frozenset(("SUB-1",))
+    # a product scope is narrowed by agreement after accumulation, not by subscription id
+    assert accumulate.await_args.args[1] is None
+
+
+async def test_recalculate_agreement_scope_keeps_agreement_level_and_new_subscription_charges(
+    mocker,
+    stub_database,
+    usage,
+    selector,
+    deleter,
+    charge_accumulation_factory,
+    charge_totals_factory,
+):
+    deleter.delete.return_value = DeleteOutcome(
+        subscriptions=["SUB-1", "agreement_additional_AGR-7"], agreements=["AGR-7"]
+    )
+    deleter.statement_agreements = frozenset(("AGR-7",))
+    mocker.patch.object(pipeline, "ChargeStreamer")
+    accumulate = mocker.AsyncMock(
+        return_value=charge_totals_factory(
+            charge_accumulation_factory("SUB-1", agreement_id="AGR-7"),
+            charge_accumulation_factory("agreement_additional_AGR-7", agreement_id="AGR-7"),
+            charge_accumulation_factory("SUB-NEW", agreement_id="AGR-7"),
+        )
+    )
+    mocker.patch.object(pipeline, "ChargeAccumulator").return_value.accumulate = accumulate
+    persister = mocker.patch.object(pipeline, "AccumulationPersister").return_value
+    persister.persist = mocker.AsyncMock()
+    mocker.patch.object(pipeline, "EstimatesUploader").return_value.update = mocker.AsyncMock(
+        return_value=mocker.Mock(has_failures=False)
+    )
+
+    await usage.recalculate(AgreementSelector("AGR-7"), {})  # act
+
+    persisted = persister.persist.call_args.args[0]
+    assert [bucket.subscription_id for bucket in persisted] == [
+        "SUB-1",
+        "agreement_additional_AGR-7",
+        "SUB-NEW",
+    ]
+    assert accumulate.await_args.args[1] is None
 
 
 async def test_recalculate_agreement_scope(stub_database, usage, selector, deleter, ctx):
