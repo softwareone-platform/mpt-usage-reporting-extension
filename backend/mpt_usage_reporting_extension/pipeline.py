@@ -287,9 +287,18 @@ class UsageReportingPipeline:  # noqa: WPS214
         *,
         dry_run: bool,
     ) -> None:
-        """Delete the scope's buckets, then re-fill exactly what the reset removed."""
+        """Delete the scope's buckets, then re-fill exactly what the reset removed.
+
+        Only a subscription scope narrows the charge stream to its subscription: its statements
+        belong to agreements shared with sibling subscriptions whose buckets stay intact. Every
+        other scope rebuilds whole agreements, so its charges are kept by agreement afterwards
+        (``_filter_to_reset``); filtering them by the deleted subscription ids would drop
+        agreement-level charges (no subscription id) and charges of subscriptions with no stored
+        bucket yet, rebuilding those agreements short.
+        """
         reset_scope = await self.reset(scope, db, dry_run=dry_run)
-        with self._scoped_charge_filter(reset_scope.subscriptions):
+        narrowed = reset_scope.subscriptions if isinstance(scope, SubscriptionSelector) else ()
+        with self._scoped_charge_filter(narrowed):
             await self._refill(reset_scope, db, execution, dry_run=dry_run)
 
     async def _tracked(
