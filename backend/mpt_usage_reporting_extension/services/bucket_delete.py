@@ -1,5 +1,6 @@
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
+from dataclasses import dataclass
 from typing import override
 
 from mpt_api_client import RQLQuery
@@ -25,6 +26,14 @@ logger = logging.getLogger(__name__)
 
 _PRODUCT_ID = "product.id"
 _SELLER_ID = "seller.id"
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedScope:
+    """The stored subscription ids and the agreement ids a scope covers, read without deleting."""
+
+    subscriptions: frozenset[str]
+    agreements: frozenset[str]
 
 
 class DeleteOutcome:
@@ -174,6 +183,57 @@ class BucketDeleter:  # noqa: WPS214
         DeleteReport(outcome, dry_run=self._dry_run).render()
         return outcome
 
+    async def resolve(self, scope: Selector) -> ResolvedScope:
+        """Read the stored subscriptions and the agreements the scope covers, deleting nothing.
+
+        A subscription scope covers that subscription and the agreements it is stored under; an
+        agreement scope covers the agreement and its stored subscriptions; a product or seller
+        scope covers the agreements the commerce API resolves and their stored subscriptions. The
+        result is exactly what ``delete`` would remove for the scope, and ``delete_resolved``
+        removes it later without resolving the scope again.
+
+        Raises:
+            UpstreamSubscriptionError: resolving a product or seller scope's agreements failed.
+        """
+        match scope:
+            case SubscriptionSelector(subscription_id):
+                return await self._resolve_subscription(subscription_id)
+            case AgreementSelector(agreement_id):
+                return await self.resolve_agreements({agreement_id})
+            case ProductSelector(product_id):
+                return await self._resolve_query(RQLQuery().n(_PRODUCT_ID).eq(product_id))
+            case SellerSelector(seller_id):
+                return await self._resolve_query(RQLQuery().n(_SELLER_ID).eq(seller_id))
+
+    @trace_span("usage_reporting.delete_buckets")
+    async def delete_resolved(
+        self, subscription_ids: frozenset[str], agreement_ids: frozenset[str]
+    ) -> DeleteOutcome:
+        """Delete exactly a resolved scope's buckets, then report.
+
+        Removes each given subscription's buckets and each given agreement's own bucket - the rows
+        ``delete`` removes for that scope - without resolving the scope again, so a recalculate
+        deletes precisely the scope it accumulated even if membership changed in the meantime. A
+        dry run reports the given ids without touching the store.
+        """
+        logger.info("Deleting the resolved buckets dry_run=%s", self._dry_run)
+        if self._dry_run:
+            outcome = DeleteOutcome(
+                subscriptions=sorted(subscription_ids), agreements=sorted(agreement_ids)
+            )
+        else:
+            outcome = await self._delete_ids(subscription_ids, agreement_ids)
+        DeleteReport(outcome, dry_run=self._dry_run).render()
+        return outcome
+
+    async def resolve_agreements(self, agreement_ids: set[str]) -> ResolvedScope:
+        """Read the given agreements' stored subscriptions, deleting nothing."""
+        subscriptions: set[str] = set()
+        for agreement_id in agreement_ids:
+            stored = self._subscription_repo.subscriptions_by_agreement(agreement_id)
+            subscriptions.update([sub async for sub in stored])  # noqa: WPS476  # sequential
+        return ResolvedScope(frozenset(subscriptions), frozenset(agreement_ids))
+
     async def _delete_scope(self, scope: Selector | None) -> DeleteOutcome:
         if scope is None:
             return await self._delete_all()
@@ -250,6 +310,38 @@ class BucketDeleter:  # noqa: WPS214
                 subscription_id=subscription_id
             ):
                 yield subscription_id
+
+    async def _resolve_subscription(self, subscription_id: str) -> ResolvedScope:
+        """The subscription itself and the agreements it is stored under."""
+        agreements: set[str] = set()
+        async for agreement_id in self._subscription_repo.agreements_by_subscription(
+            subscription_id
+        ):
+            agreements.add(agreement_id)
+        return ResolvedScope(frozenset((subscription_id,)), frozenset(agreements))
+
+    async def _resolve_query(self, query: RQLQuery) -> ResolvedScope:
+        """The agreements the commerce API resolves for the query and their stored subscriptions."""
+        agreement_ids: set[str] = set()
+        async for agreement_id in self._agreement_ids(query):
+            agreement_ids.add(agreement_id)
+        return await self.resolve_agreements(agreement_ids)
+
+    async def _delete_ids(
+        self, subscription_ids: Iterable[str], agreement_ids: Iterable[str]
+    ) -> DeleteOutcome:
+        """Delete the given subscriptions' and agreements' buckets, reporting what was deleted."""
+        subscriptions = [
+            subscription_id
+            for subscription_id in sorted(subscription_ids)
+            if await self._subscription_repo.delete(subscription_id=subscription_id)  # noqa: WPS476
+        ]
+        agreements = [
+            agreement_id
+            for agreement_id in sorted(agreement_ids)
+            if await self._agreement_repo.delete(agreement_id=agreement_id)  # noqa: WPS476
+        ]
+        return DeleteOutcome(subscriptions=subscriptions, agreements=agreements)
 
     async def _has_subscription(self, subscription_id: str) -> bool:
         async for stored_subscription_id in self._subscription_repo.subscriptions_by_agreement():

@@ -20,3 +20,11 @@ class UpstreamStatementError(UpstreamAPIError):
 
 class UpstreamSubscriptionError(UpstreamAPIError):
     """Querying commerce subscriptions failed upstream."""
+
+
+class ChargePriceError(ExtensionError):
+    """A statement charge's price cannot be accumulated without guessing its amount."""
+
+
+class EstimateCurrencyError(ExtensionError):
+    """An estimate sums charges priced in more than one currency, so it must not be uploaded."""

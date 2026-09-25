@@ -12,7 +12,9 @@ single base:
 ```text
 ExtensionError
 ├── ConfigurationError            missing or invalid configuration
+├── ChargePriceError              a statement charge lacks the BSPx1 or PPx1 it is summed from
 ├── DatabaseError                 database operation failed or persistence misuse
+├── EstimateCurrencyError         an estimate sums charges priced in more than one currency
 └── UpstreamAPIError              an MPT API call failed upstream
     ├── UpstreamStatementError    selecting statements / streaming charges failed
     └── UpstreamSubscriptionError querying commerce subscriptions failed
@@ -26,6 +28,24 @@ ExtensionError
 - `DatabaseError` covers the persistence layer's internal-invariant guards
   (database used outside its `async with` context, an `INSERT ... RETURNING`
   producing no row); `ExtensionError` is never raised directly.
+- `ChargePriceError` is raised by `accumulation.py` while charges are summed,
+  when a charge has no `PPx1`, or no `BSPx1` (its sale price in the
+  subscription's price currency) and no `SPx1` in its purchase currency. `SPx1`
+  stands in for `BSPx1` only when the charge was sold in its purchase currency,
+  since otherwise it is in another currency, and a missing price is never
+  counted as 0. The error names the charge and statement, and that statement's
+  `statement_processing` row is finalised as `failure`. Figures that leave a
+  statement out are never persisted or pushed: in `run` the error propagates
+  and the command fails before persisting any accumulated figures (additive,
+  so the day is re-run with `--date` after the fix); in `recalculate` and the
+  recalculating migrations `ChargeAccumulator` (`services/charges.py`) fails
+  only the statement's agreement, which keeps its stored buckets and estimates,
+  while the rest of the scope is rebuilt and the execution finishes as
+  `completed_with_errors` with `failed_agreements`.
+- `EstimateCurrencyError` is raised by `services/estimate_currency.py` when an
+  estimate must not be uploaded because the subscription's charges in the run
+  carry more than one purchase currency. It is handled per subscription by the
+  estimate-upload boundary below.
 - CLI argument validation uses Typer's own `typer.BadParameter`
   (`window.py`, `selectors.py`); it is a framework boundary, not part of the
   package hierarchy.
@@ -41,6 +61,7 @@ types:
 - `services/charges.py` — charge streaming → `UpstreamStatementError`
 - `services/bucket_delete.py` — agreement-id resolution → `UpstreamSubscriptionError`
 - `cli/commands/push_estimates_by_id.py` — subscription-id resolution → `UpstreamSubscriptionError`
+- `services/estimate_currency.py` — listing the products' agreements → `UpstreamAPIError`
 
 These sites do not log; the boundary that finally handles the error owns the
 single log/notification (see below).
@@ -50,10 +71,12 @@ single log/notification (see below).
 A `run`/`recalculate` failure crosses three layers, innermost first:
 
 1. **Per-statement recording** — `StatementProcessingRecorder`
-   (`services/execution_tracker.py`) brackets each statement's processing.
+   (`services/execution_tracker.py`) brackets each statement's processing:
+   `ChargeAccumulator` streams and sums the statement's charges inside it.
    An `Exception` escaping the bracket finalises that statement's
    `statement_processing` row as `failure` (with the error message) and
-   re-raises.
+   re-raises. In a recalculate a `ChargePriceError` is then caught and the
+   statement's agreement left out (see above); any other error propagates.
 2. **Per-execution recording** — `ExecutionTracker` brackets the whole
    command. An `Exception` escaping the body finalises the `command_execution`
    row as `failed` (with the error in the result payload) and re-raises.
@@ -90,7 +113,8 @@ raises an `Exception` produces exactly one card; `KeyboardInterrupt` and
   host); the exception is re-raised afterward, so the process still exits
   non-zero.
 - **Failure card (💣), completed with errors** — the execution finished but
-  the handle's `has_errors` flag was set (partial estimate-upload failures).
+  the handle's `has_errors` flag was set (partial estimate-upload failures, or
+  agreements a recalculate left out because a charge could not be summed).
   Includes an error-count summary instead of a stacktrace, and the command
   exits with code 1.
 
@@ -102,8 +126,10 @@ then drops sends silently and the run behaves identically otherwise.
 
 Estimate uploads must not let one subscription's failure abort the rest.
 `PriceEstimateConsumer` (`services/estimates_uploader.py`) is the isolation
-boundary: it catches the upload error, logs it once with `logger.exception`,
-and converts it into a failed `UploadOutcome`. The run report logs each
+boundary: a currency-guard refusal (`EstimateCurrencyError`) is logged once at
+`ERROR` without a traceback, and an upload error once with `logger.exception`;
+both become a failed `UploadOutcome`. A refused estimate never reaches the
+`PUT`. The run report logs each
 subscription as `OK`/`FAILED`, the execution finishes as
 `completed_with_errors`, and the command exits non-zero. Both the failure and
 the report line reach the run's log, because the CLI configures the SDK's
