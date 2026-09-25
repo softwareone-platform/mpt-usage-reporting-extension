@@ -12,7 +12,11 @@ from mpt_usage_reporting_extension.selectors import (
     SellerSelector,
     SubscriptionSelector,
 )
-from mpt_usage_reporting_extension.services.bucket_delete import BucketDeleter, DeleteOutcome
+from mpt_usage_reporting_extension.services.bucket_delete import (
+    BucketDeleter,
+    DeleteOutcome,
+    ResolvedScope,
+)
 
 
 class _StubSubscriptions:
@@ -124,6 +128,47 @@ async def test_delete_product_dedupes_agreements(deleter, subscription_repo, sub
     assert subscription_repo.delete.await_count == 2
     subscription_repo.delete.assert_any_call(subscription_id="SUB-AGR-1")
     subscription_repo.delete.assert_any_call(subscription_id="SUB-AGR-2")
+
+
+async def test_resolve_subscription_reads_its_agreements_without_deleting(
+    deleter, subscription_repo, agreement_repo
+):
+    subscription_repo.stored_agreements = ["AGR-1", "AGR-2"]
+
+    result = await deleter.resolve(SubscriptionSelector("SUB-1"))
+
+    assert result == ResolvedScope(frozenset(("SUB-1",)), frozenset(("AGR-1", "AGR-2")))
+    subscription_repo.delete.assert_not_called()
+    agreement_repo.delete.assert_not_called()
+
+
+async def test_resolve_agreement_reads_its_stored_subscriptions(deleter, subscription_repo):
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter([
+        "SUB-1",
+        "agreement_additional_AGR-1",
+    ])
+
+    result = await deleter.resolve(AgreementSelector("AGR-1"))
+
+    assert result == ResolvedScope(
+        frozenset(("SUB-1", "agreement_additional_AGR-1")), frozenset(("AGR-1",))
+    )
+    subscription_repo.delete.assert_not_called()
+
+
+async def test_resolve_product_reads_the_api_agreements_and_their_subscriptions(
+    deleter, subscription_repo, agreement_repo, subscriptions
+):
+    subscriptions.agreements = ["AGR-1", "AGR-1", "AGR-2"]
+    subscription_repo.subscriptions_by_agreement.side_effect = lambda agreement_id=None: _aiter(
+        [f"SUB-{agreement_id}"] if agreement_id else []
+    )
+
+    result = await deleter.resolve(ProductSelector("PRD-1"))
+
+    expected = ResolvedScope(frozenset(("SUB-AGR-1", "SUB-AGR-2")), frozenset(("AGR-1", "AGR-2")))
+    assert result == expected
+    agreement_repo.exists.assert_not_called()  # no existence probes
 
 
 async def test_delete_wraps_upstream_error(deleter, subscriptions):
@@ -333,6 +378,44 @@ async def test_delete_agreement_summary_counts_the_deleted_agreements(
     await deleter.delete(AgreementSelector("AGR-9"))  # act
 
     assert "Deleted the stored accumulations of 0 subscription(s) and 1 agreement(s)" in caplog.text
+
+
+async def test_delete_resolved_deletes_exactly_the_given_ids(
+    deleter, subscription_repo, agreement_repo, subscriptions
+):
+    outcome = await deleter.delete_resolved(["SUB-2", "SUB-1"], ["AGR-1"])
+
+    assert [call.kwargs for call in subscription_repo.delete.await_args_list] == [
+        {"subscription_id": "SUB-1"},
+        {"subscription_id": "SUB-2"},
+    ]
+    agreement_repo.delete.assert_awaited_once_with(agreement_id="AGR-1")
+    assert subscriptions.query is None  # the scope is not resolved again
+    assert outcome == DeleteOutcome(subscriptions=["SUB-1", "SUB-2"], agreements=["AGR-1"])
+
+
+async def test_delete_resolved_reports_only_what_was_deleted(
+    deleter, subscription_repo, agreement_repo
+):
+    subscription_repo.delete.side_effect = [1, 0]
+    agreement_repo.delete.return_value = 0
+
+    outcome = await deleter.delete_resolved(["SUB-1", "SUB-2"], ["AGR-1"])
+
+    assert outcome == DeleteOutcome(subscriptions=["SUB-1"])
+
+
+async def test_delete_resolved_dry_run_skips_delete_calls(
+    subscription_repo, agreement_repo, subscriptions
+):
+    deleter = BucketDeleter(
+        subscription_repo, agreement_repo, cast(Any, subscriptions), dry_run=True
+    )
+
+    await deleter.delete_resolved(["SUB-1"], ["AGR-1"])  # act
+
+    subscription_repo.delete.assert_not_called()
+    agreement_repo.delete.assert_not_called()
 
 
 def test_outcome_does_not_equal_a_foreign_type():

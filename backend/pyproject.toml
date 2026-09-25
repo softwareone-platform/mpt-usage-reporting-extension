@@ -101,6 +101,8 @@ per-file-ignores = [
   "*cli/commands/push_estimates_by_id.py:WPS202,WPS201",
   # The pipeline orchestrates every stage, so it sits one collaborator over the import cap.
   "*pipeline.py:WPS201",
+  # The package's exception hierarchy lives in one flat module by design, one class per error.
+  "*exceptions.py:WPS202",
 ]
 
 [tool.ruff]

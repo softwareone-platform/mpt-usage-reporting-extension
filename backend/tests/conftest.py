@@ -170,32 +170,53 @@ def default_issued_at():
 
 @pytest.fixture
 def statement_factory(default_issued_at):
-    def factory(statement_id=None, *, issued=None, cancelled=None):
+    def factory(statement_id=None, *, issued=None, cancelled=None, agreement_id=None):
         payload = {}
         if statement_id is not None:
             payload["id"] = statement_id
+        if agreement_id is not None:
+            payload["agreement"] = {"id": agreement_id}
         if issued is None and cancelled is None:
             issued = default_issued_at
-        audit = {}
-        if issued is not None:
-            audit["issued"] = {"at": issued}
-        if cancelled is not None:
-            audit["cancelled"] = {"at": cancelled}
-        payload["audit"] = audit
+        payload["audit"] = _statement_audit(issued, cancelled)
         return Statement(payload)
 
     return factory
 
 
+def _statement_audit(issued, cancelled):
+    """The statement's audit block with the dates given."""
+    dates = {"issued": issued, "cancelled": cancelled}
+    present = {event: moment for event, moment in dates.items() if moment is not None}
+    return {event: {"at": moment} for event, moment in present.items()}
+
+
+def _price_or_zero(amount):
+    """An absent amount stays absent; an empty one becomes the zero price string."""
+    return None if amount is None else (amount or "0.00")
+
+
+def _price_currency(purchase, sale):
+    """The charge's currency block with the codes given, or None when neither is."""
+    codes = {"purchase": purchase, "sale": sale}
+    currency = {key: code for key, code in codes.items() if code is not None}
+    return currency or None
+
+
 @pytest.fixture
 def price_factory():
-    def factory(ppx1=None, spx1=None):
-        prices = {}
-        if ppx1 is not None:
-            prices["PPx1"] = ppx1 or "0.00"
-        if spx1 is not None:
-            prices["SPx1"] = spx1 or "0.00"
-        return BaseModel(**prices) if prices else None
+    def factory(
+        ppx1=None, bspx1=None, purchase_currency=None, spx1=None, unit_pp=None, sale_currency=None
+    ):
+        prices = {
+            "PPx1": _price_or_zero(ppx1),
+            "BSPx1": _price_or_zero(bspx1),
+            "SPx1": spx1,
+            "unitPP": unit_pp,
+            "currency": _price_currency(purchase_currency, sale_currency),
+        }
+        present = {key: amount for key, amount in prices.items() if amount is not None}
+        return BaseModel(**present) if present else None
 
     return factory
 
@@ -209,15 +230,26 @@ def statement_charge_factory(statement_factory, price_factory):
         statement=None,
         price=("0.00", "0.00"),
         period_end=None,
+        purchase_currency=None,
+        spx1=None,
+        unit_pp=None,
+        charge_id=None,
+        sale_currency=None,
     ):
-        payload = {}
+        payload = {} if charge_id is None else {"id": charge_id}
         if agreement_id is not None:
             payload["agreement"] = {"id": agreement_id}
         if subscription_id is not None:
             payload["subscription"] = {"id": subscription_id}
         if period_end is not None:
             payload["period"] = {"end": period_end}
-        prices = price_factory(*price)
+        prices = price_factory(
+            *price,
+            purchase_currency=purchase_currency,
+            spx1=spx1,
+            unit_pp=unit_pp,
+            sale_currency=sale_currency,
+        )
         if prices:
             payload["price"] = prices
         charge = StatementCharge(payload)
@@ -229,7 +261,16 @@ def statement_charge_factory(statement_factory, price_factory):
 
 @pytest.fixture
 def charge_accumulation_factory():
-    def factory(subscription_id, *, agreement_id="AGR-1", year=2026, month=6, ppx1=None, spx1=None):
+    def factory(
+        subscription_id,
+        *,
+        agreement_id="AGR-1",
+        year=2026,
+        month=6,
+        ppx1=None,
+        spx1=None,
+        currencies=(),
+    ):
         return ChargeAccumulation(
             agreement_id,
             subscription_id,
@@ -237,6 +278,7 @@ def charge_accumulation_factory():
             month,
             Decimal("1.00") if ppx1 is None else ppx1,
             Decimal(0) if spx1 is None else spx1,
+            set(currencies),
         )
 
     return factory

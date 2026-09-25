@@ -70,8 +70,10 @@ subscription=SUB-1234-5678 status=FAILED error="value must be 9999.000 or less"
   raised), or `DRY-RUN` (the estimate was computed and the `PUT` suppressed). Only
   `recalculate` accepts `--dry-run`, so `run` never emits a `DRY-RUN` line.
 - A `FAILED` line carries no price fields and appends `error=` with the failure reason — an MPT
-  API rejection or an unexpected exception, both rendered as the exception's own text. Values
-  holding whitespace are quoted, so the pairs on a line stay separable.
+  API rejection, a refused upload (the run's charges for the subscription carry more than one
+  purchase currency), or an unexpected exception, all
+  rendered as the exception's own text. Values holding whitespace are quoted, so the pairs on a
+  line stay separable.
 
 ## Observability Settings
 
