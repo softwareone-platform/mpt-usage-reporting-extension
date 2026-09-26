@@ -37,11 +37,17 @@ as the `mpt-billing-subscription-usage` console script (`pyproject.toml` `[proje
   `--product-id`/`--seller-id` are resolved to their agreements via the commerce API and clear both
   tables by `agreement_id`; `--subscription-id` clears only that subscription's buckets (the shared
   agreement bucket aggregates its siblings). See `services/bucket_delete.py` (`BucketDeleter`).
-- `recalculate` — rebuild a scope idempotently: `delete` the scope's buckets, then run the normal
-  fill (select -> accumulate -> persist -> push estimates) so re-runs do not double-count. Optional
+- `recalculate` — rebuild a scope idempotently: resolve the scope by reading only
+  (`plan_reset`, `BucketDeleter.resolve`), select its statements and accumulate their charges,
+  and only then delete exactly the resolved subscriptions' and agreements' buckets
+  (`delete_planned`, `BucketDeleter.delete_resolved`, no second resolution) and persist and push
+  the rebuilt ones, so re-runs do not double-count and a failure while accumulating leaves the
+  stored buckets untouched. Only a subscription scope narrows the charge stream to its
+  subscription; every other scope rebuilds whole agreements and keeps all their charges,
+  including agreement-level ones. Optional
   `--product-id` / `--seller-id` (none = all configured products); requires `--from-date` and
   `--till-date` to bound statement selection. `pipeline.recalculate` reuses every `run` stage and
-  adds only the reset step.
+  adds only the plan and delete steps.
   `--dry-run` previews execution and exits before any delete/persist/push/cleanup mutation.
 
 ### Run data flow
@@ -55,10 +61,28 @@ any API work. Each stage is a service constructed with only the dependencies it 
 1. Resolve the window (`window.py` -> `RunWindow`, a half-open `[start, end)` UTC range).
 2. Build a `RunContext` (`context.py`) with the MPT API service, window, and product ids.
 3. `StatementSelector` (`services/statements.py`) selects billing statements via RQL.
-4. `ChargeStreamer` (`services/charges.py`) streams charges line-by-line (JSONL).
-5. `ChargeAccumulator` (`accumulation.py`) groups charges by
+4. `ChargeStreamer` (`services/charges.py`) streams one statement's charges line-by-line (JSONL).
+5. `ChargeAccumulator` (`services/charges.py`, summing in `accumulation.py`) processes the
+   statements one at a time inside each one's `statement_processing` recording bracket, sums a
+   statement into its own totals, and merges them only if every charge could be summed, so a
+   statement counts completely or not at all. It groups charges by
    `AccumulationKey` = `(agreement_id, subscription_id, year, month)` into `ChargeTotals` —
-   the month comes from the charge's billing `period.end`, falling back to the statement's
+   summing `PPx1` into `ppx1` and `BSPx1` into `spx1`. `BSPx1` is the charge's sale price in the
+   purchase currency, which is the authorization's currency and therefore the currency the
+   subscription's own `price` is denominated in; `SPx1` is the same amount converted to the
+   agreement's billing currency and must not be summed into a subscription price (under the
+   "AWS Vietnam USD" authorization that put VND sums into a USD field, MPT-25312). Charges
+   issued before the platform added `BSPx1` lack it; when such a charge was sold in its purchase
+   currency (`price.currency.purchase == price.currency.sale`), its `SPx1` is the same amount in
+   the same currency and is summed instead. Any other charge without `BSPx1`, or one without
+   `PPx1`, raises `ChargePriceError` rather than being counted as 0 or in the wrong currency; its
+   statement is recorded as `failure`. The additive `run` then fails whole before persisting
+   any accumulated figures, so the day can be re-run with `--date` once the data is fixed. A
+   `recalculate` fails only that agreement: its buckets and estimates are left as they were, the
+   rest of the scope is rebuilt, and the execution finishes completed-with-errors naming it in
+   `failed_agreements`. Each bucket also
+   collects its charges' `price.currency.purchase` so the upload can verify the currency. The
+   month comes from the charge's billing `period.end`, falling back to the statement's
    cancelled/issued date when the charge has no usable period. The platform returns an absent
    date as the `0001-01-01T00:00:00.000Z` sentinel rather than as `null`, so a date outside the
    storable year range counts as absent and the next candidate is used. Deploying a
@@ -78,10 +102,17 @@ any API work. Each stage is a service constructed with only the dependencies it 
    `null` (never a fabricated 0, which would overwrite a real estimate). Present sums are
    clamped to 0 because credits can push a total negative and MPT rejects negative prices — and
    concurrently `PUT`s `{"price": {SPxM, SPxY}}` back to the subscription via the MPT API —
-   only the sales prices are sent; the platform recalculates the purchase prices — skipping
-   synthetic (`agreement_additional_*`) and dateless buckets. It logs a
-   per-subscription report (values + `OK`/`FAILED`) and exits non-zero on
-   any failure. Charge streaming logs `[k/N]` progress per statement.
+   only the sales prices are sent; the platform recalculates the purchase prices and tags the
+   price with the authorization's currency (the tag is not writable) — skipping
+   synthetic (`agreement_additional_*`) and dateless buckets. Before each `PUT`, the currency
+   guard (`services/estimate_currency.py`) refuses, as a `FAILED` outcome, a subscription whose
+   charges in the run carry more than one purchase currency, since their sum has no single
+   currency. It makes no API calls: a single purchase currency is not compared with the
+   agreement, because the platform derives both the charges' purchase currency and the
+   subscription's price currency from the same authorization. The guard is armed only by
+   `run`/`recalculate`, where charges are streamed. It logs a per-subscription report (values +
+   `OK`/`FAILED`) and exits
+   non-zero on any failure. Charge streaming logs `[k/N]` progress per statement.
 
 ## Persistence (PostgreSQL)
 
@@ -122,6 +153,7 @@ can serve the SDK's built-in endpoints.
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
 | `services/charge_persistence.py`, `services/bucket_delete.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `SPxM`/`SPxY` estimates to subscriptions (purchase prices are recalculated by the platform; figures without backing buckets are sent as `null`, and negative totals are clamped to 0 because MPT rejects negative prices), with a per-run report |
+| `services/estimate_currency.py` | `EstimateCurrencyGuard` — refuse an estimate whose charges in the run carry more than one purchase currency; `split_currency_agreement_ids` — list the agreements billed in a currency other than their price currency (used by the MPT-25312 migration) |
 | `services/execution_notifier.py` | `ExecutionNotifier` — report each `run`/`recalculate` execution to MS Teams (success with the run report, or failure with error and stacktrace); disabled when `MPT_MSTEAMS_WEBHOOK_URL` is unset |
 | `steps.py` | `logged_step` — logs each pipeline stage's start, end, and duration alongside its `@trace_span` |
 | `observability.py` | Bootstraps the SDK's logging and tracing for CLI runs, which happen outside the SDK serve runtime that would otherwise do it |

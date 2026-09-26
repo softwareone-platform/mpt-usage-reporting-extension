@@ -9,6 +9,7 @@ from mpt_usage_reporting_extension.persistence.models import (
     PriceEstimate,
     SubscriptionMonthlyAccumulation,
 )
+from mpt_usage_reporting_extension.services.estimate_currency import EstimateCurrencyGuard
 from mpt_usage_reporting_extension.services.estimates_uploader import (
     EstimatesUploader,
     PriceEstimateConsumer,
@@ -255,6 +256,48 @@ async def test_update_uploads_all_null_when_window_is_empty(
 
     update.assert_called_once_with("SUB-1", {"price": {"SPxM": None, "SPxY": None}})
     assert not report.has_failures
+
+
+async def test_update_refuses_estimate_charged_in_more_than_one_currency(
+    updater, update, year, month, caplog
+):
+    charged = {"SUB-1": frozenset(("USD", "VND")), "SUB-2": frozenset(("USD",))}
+
+    report = await updater.update(["SUB-1", "SUB-2"], year, month, purchase_currencies=charged)
+
+    update.assert_called_once_with("SUB-2", {"price": {"SPxM": 1.0, "SPxY": 1.0}})
+    assert report.failed_count == 1
+    assert "Refusing to upload subscription SUB-1 estimate" in caplog.text
+
+
+async def test_consumer_refuses_mixed_currency_before_dry_run(
+    subscriptions, update, price_estimate
+):
+    guard = EstimateCurrencyGuard({"SUB-1": frozenset(("EUR", "CHF"))})
+
+    outcome = await PriceEstimateConsumer(subscriptions, guard, dry_run=True).consume(
+        "SUB-1", price_estimate
+    )
+
+    update.assert_not_called()
+    assert outcome.failed
+    assert "more than one currency (CHF,EUR)" in outcome.error
+
+
+async def test_update_traces_the_period_when_given_purchase_currencies(
+    mocker, updater, year, month
+):
+    set_attributes = mocker.patch(
+        "mpt_extension_sdk.observability.decorators.set_attributes", autospec=True
+    )
+    charged = {"SUB-1": frozenset(("USD",))}
+
+    await updater.update(["SUB-1"], year, month, purchase_currencies=charged)  # act
+
+    span_attributes = set_attributes.call_args_list[0].args[1]
+    assert {
+        key: span_attributes[key] for key in ("usage_reporting.year", "usage_reporting.month")
+    } == {"usage_reporting.year": 2026, "usage_reporting.month": 6}
 
 
 async def test_update_does_nothing_when_empty(updater, update, year, month):

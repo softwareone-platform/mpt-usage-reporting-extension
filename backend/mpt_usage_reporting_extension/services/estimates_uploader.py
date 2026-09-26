@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterable, AsyncIterator, Iterable, Iterator
+from collections.abc import AsyncIterable, AsyncIterator, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -10,6 +10,7 @@ from mpt_extension_sdk.services.mpt_api_service.subscription import Subscription
 
 from mpt_usage_reporting_extension.accumulation import ChargeAccumulation
 from mpt_usage_reporting_extension.constants import ADDITIONAL_AGREEMENT_PREFIX
+from mpt_usage_reporting_extension.exceptions import EstimateCurrencyError
 from mpt_usage_reporting_extension.persistence.models import (
     PriceEstimate,
     SubscriptionMonthlyAccumulation,
@@ -17,6 +18,7 @@ from mpt_usage_reporting_extension.persistence.models import (
 from mpt_usage_reporting_extension.persistence.protocols import (
     SubscriptionAccumulationRepository,
 )
+from mpt_usage_reporting_extension.services.estimate_currency import EstimateCurrencyGuard
 from mpt_usage_reporting_extension.services.helper import as_async_iterator
 from mpt_usage_reporting_extension.types import Month, Year
 from mpt_usage_reporting_extension.utils import month_ordinal, sanitize_log_value
@@ -231,16 +233,40 @@ class PriceEstimateProducer:
 
 
 class PriceEstimateConsumer:
-    """PUT one produced price estimate to MPT and return its outcome; never raises."""
+    """Check one produced estimate's currency and PUT it to MPT; never raises.
 
-    def __init__(self, subscriptions: SubscriptionService, *, dry_run: bool = False) -> None:
+    An estimate summed from charges priced in more than one currency is refused - reported as a
+    failure - rather than uploaded as a meaningless mixed-currency figure.
+    """
+
+    def __init__(
+        self,
+        subscriptions: SubscriptionService,
+        guard: EstimateCurrencyGuard | None = None,
+        *,
+        dry_run: bool = False,
+    ) -> None:
         self._subscriptions = subscriptions
+        self._guard = guard or EstimateCurrencyGuard()
         self._dry_run = dry_run
 
     async def consume(self, subscription_id: str, estimate: PriceEstimate) -> UploadOutcome:
-        """PUT the estimate and return the outcome; on any error log it and return a failure."""
+        """Check and PUT the estimate; on any error log it and return a failure outcome."""
+        try:
+            self._guard.verify(subscription_id)
+        except EstimateCurrencyError as exc:
+            logger.error(  # noqa: TRY400  # a refusal, not a crash: no traceback to report
+                "Refusing to upload subscription %s estimate: %s",
+                sanitize_log_value(subscription_id),
+                sanitize_log_value(str(exc)),
+            )
+            return UploadOutcome(subscription_id, failed=True, exception=exc, error=str(exc))
         if self._dry_run:
             return UploadOutcome(subscription_id, estimate=estimate, dry_run=True)
+        return await self._put(subscription_id, estimate)
+
+    async def _put(self, subscription_id: str, estimate: PriceEstimate) -> UploadOutcome:
+        """PUT the estimate and return the outcome."""
         payload = {"price": estimate.to_sales_dict()}
         logger.info("PUT subscription %s price %s", sanitize_log_value(subscription_id), payload)
         try:
@@ -283,8 +309,12 @@ class EstimatesUploader:
     @trace_span(
         "usage_reporting.upload_estimates",
         attributes={
-            "usage_reporting.year": lambda uploader, subscription_ids, year, month: int(year),
-            "usage_reporting.month": lambda uploader, subscription_ids, year, month: int(month),
+            "usage_reporting.year": lambda uploader, subscription_ids, year, month, **kwargs: int(
+                year
+            ),
+            "usage_reporting.month": lambda uploader, subscription_ids, year, month, **kwargs: int(
+                month
+            ),
         },
     )
     async def update(
@@ -292,11 +322,14 @@ class EstimatesUploader:
         subscription_ids: AsyncIterable[str] | Iterable[str],
         year: Year,
         month: Month,
+        purchase_currencies: Mapping[str, frozenset[str]] | None = None,
     ) -> EstimateUploadReport:
         """Upload the streamed subscription ids' estimates and return the run report.
 
         Ids are consumed lazily and a slot is reserved before each task is created, so reads,
         tasks, and uploads stay bounded by ``max_concurrency`` regardless of the id count.
+        ``purchase_currencies`` (see ``charged_currencies``) arms the currency guard: an
+        estimate is refused when its charges in this run were priced in more than one currency.
         """
         logger.info(
             "Uploading estimates for period %d-%02d%s",
@@ -305,7 +338,9 @@ class EstimatesUploader:
             " (dry run)" if self._dry_run else "",
         )
         report = EstimateUploadReport(year, month, dry_run=self._dry_run)
-        consumer = PriceEstimateConsumer(self._subscriptions, dry_run=self._dry_run)
+        consumer = PriceEstimateConsumer(
+            self._subscriptions, EstimateCurrencyGuard(purchase_currencies), dry_run=self._dry_run
+        )
         async with asyncio.TaskGroup() as group:
             async for subscription_id, estimate in self._producer.produce(
                 subscription_ids, year, month
