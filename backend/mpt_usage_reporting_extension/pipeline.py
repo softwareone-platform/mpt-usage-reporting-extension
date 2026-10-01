@@ -11,7 +11,11 @@ import typer
 from mpt_api_client.resources.billing.statements import Statement
 from mpt_extension_sdk.observability import trace_span
 
-from mpt_usage_reporting_extension.accumulation import ChargeAccumulation, StatementChargeFilter
+from mpt_usage_reporting_extension.accumulation import (
+    ChargeAccumulation,
+    ChargeTotals,
+    StatementChargeFilter,
+)
 from mpt_usage_reporting_extension.context import RunContext
 from mpt_usage_reporting_extension.persistence.postgres.database import (
     PostgresDatabase,
@@ -31,6 +35,7 @@ from mpt_usage_reporting_extension.services.charges import (
     ChargeReport,
     ChargeStreamer,
 )
+from mpt_usage_reporting_extension.services.estimate_currency import charged_currencies
 from mpt_usage_reporting_extension.services.estimates_uploader import (
     EstimatesUploader,
     EstimateUploadReport,
@@ -120,43 +125,33 @@ class UsageReportingPipeline:  # noqa: WPS214
             functools.partial(self._reset_and_refill, scope, dry_run=dry_run),
         )
 
+    @trace_span("usage_reporting.plan_reset")
+    @logged_step("plan_reset")
+    async def plan_reset(self, scope: Selector | None, db: Database) -> ResetScope:
+        """Resolve the scope a recalculate rebuilds, reading the store and the API only.
+
+        A ``None`` scope is expanded to the run's configured products, so the rebuild matches the
+        re-fill's product scope instead of touching buckets of unrelated products; the per-product
+        scopes are unioned into one. A subscription scope keeps its shared agreement buckets, so
+        its ``agreement_ids`` (the agreement buckets to rebuild) are empty.
+        """
+        deleter = self._deleter(db, dry_run=True)
+        if scope is None:
+            return await self._plan_products(deleter)
+        resolved = await deleter.resolve(scope)
+        rebuilt = frozenset() if isinstance(scope, SubscriptionSelector) else resolved.agreements
+        return ResetScope(resolved.subscriptions, resolved.agreements, rebuilt)
+
     @trace_span("usage_reporting.reset")
     @logged_step("reset")
-    async def reset(
-        self,
-        scope: Selector | None,
-        db: Database,
-        *,
-        dry_run: bool,
-    ) -> ResetScope:
-        """Delete the scope's stored buckets and report the selector-defined scope to rebuild.
+    async def delete_planned(self, planned: ResetScope, db: Database, *, dry_run: bool) -> None:
+        """Delete exactly the planned scope's buckets, the ones the accumulation rebuilds.
 
-        A ``None`` scope is expanded to the run's configured products, so the reset matches the
-        re-fill's product scope instead of wiping buckets of unrelated products; the per-product
-        reset scopes are unioned into one outcome.
+        A dry run only reports what it would delete.
         """
-        api_service = self._ctx.api_service
-        deleter = BucketDeleter(
-            db.subscription_repository(),
-            db.agreement_repository(),
-            api_service.client.commerce.subscriptions,
-            dry_run=dry_run,
+        await self._deleter(db, dry_run=dry_run).delete_resolved(
+            planned.subscriptions, planned.agreement_ids
         )
-        if scope is not None:
-            reset = await deleter.delete(scope)
-            statement_agreements = deleter.statement_agreements
-            if isinstance(scope, SubscriptionSelector):
-                return ResetScope(
-                    subscriptions=frozenset((scope.subscription_id,)),
-                    statement_agreements=statement_agreements,
-                    agreement_ids=frozenset(),
-                )
-            return ResetScope(
-                subscriptions=frozenset(reset.subscriptions),
-                statement_agreements=statement_agreements,
-                agreement_ids=statement_agreements,
-            )
-        return await self._reset_products(deleter)
 
     @trace_span("usage_reporting.select_statements")
     @logged_step("select_statements")
@@ -175,22 +170,34 @@ class UsageReportingPipeline:  # noqa: WPS214
     @trace_span(
         "usage_reporting.accumulate_charges",
         attributes={
-            "usage_reporting.statement_count": lambda pipeline, statements, recorder: len(
+            "usage_reporting.statement_count": lambda pipeline, statements, recorder, **kwargs: len(
                 statements
             ),
         },
     )
     @logged_step("accumulate_charges")
     async def accumulate_charges(
-        self, statements: list[Statement], recorder: StatementProcessingRecorder
-    ) -> Iterable[ChargeAccumulation]:
-        """Stream and accumulate the statements' charges, then render the charge report."""
-        totals = await ChargeAccumulator().accumulate(
-            ChargeStreamer(self._ctx.api_service, recorder).stream(statements),
-            self._ctx.charge_filter,
+        self,
+        statements: list[Statement],
+        recorder: StatementProcessingRecorder,
+        *,
+        isolate_agreements: bool = False,
+    ) -> ChargeTotals:
+        """Stream and accumulate the statements' charges, then render the charge report.
+
+        With ``isolate_agreements`` an agreement with a charge that cannot be summed is left out
+        and listed in the totals' ``failed_agreements``; otherwise the command fails.
+
+        Raises:
+            ChargePriceError: a charge carries no price the accumulation can sum, unless
+                ``isolate_agreements``; the command fails before anything is persisted.
+        """
+        accumulator = ChargeAccumulator(ChargeStreamer(self._ctx.api_service), recorder)
+        totals = await accumulator.accumulate(
+            statements, self._ctx.charge_filter, isolate_agreements=isolate_agreements
         )
         ChargeReport(totals).render()
-        return totals.accumulations.values()
+        return totals
 
     @trace_span("usage_reporting.persist")
     @logged_step("persist")
@@ -218,23 +225,30 @@ class UsageReportingPipeline:  # noqa: WPS214
     @logged_step("update_estimates")
     async def update_estimates(
         self,
-        accumulations: Iterable[ChargeAccumulation],
+        accumulations: list[ChargeAccumulation],
         subscription_repo: SubscriptionAccumulationRepository,
         *,
-        subscriptions: object,
         dry_run: bool,
     ) -> EstimateUploadReport:
         """Upload estimates for the run's subscriptions and return the upload report.
 
+        The purchase currencies of the run's charges arm the uploader's currency guard, so an
+        estimate summed over more than one currency is never uploaded.
         The caller inspects the report's failures; this method no longer exits, so the execution
         row can be finalised before the process exits non-zero.
         """
         anchor = last_month(dt.datetime.now(tz=dt.UTC).date())
+        api_service = self._ctx.api_service
         report: EstimateUploadReport = await EstimatesUploader(
             subscription_repo,
-            subscriptions,  # type: ignore[arg-type]
+            api_service.subscriptions,
             dry_run=dry_run,
-        ).update(updatable_subscription_ids(accumulations), anchor.year, Month(anchor.month))
+        ).update(
+            updatable_subscription_ids(accumulations),
+            anchor.year,
+            Month(anchor.month),
+            purchase_currencies=charged_currencies(accumulations),
+        )
         report.render()
         return report
 
@@ -287,10 +301,46 @@ class UsageReportingPipeline:  # noqa: WPS214
         *,
         dry_run: bool,
     ) -> None:
-        """Delete the scope's buckets, then re-fill exactly what the reset removed."""
-        reset_scope = await self.reset(scope, db, dry_run=dry_run)
-        with self._scoped_charge_filter(reset_scope.subscriptions):
-            await self._refill(reset_scope, db, execution, dry_run=dry_run)
+        """Accumulate the scope's charges first, then delete and re-fill its buckets.
+
+        The scope is resolved by reading only (``plan_reset``), and its statements' charges are
+        accumulated before anything is deleted. A failure while accumulating therefore leaves the
+        stored buckets and the pushed estimates untouched, and a re-run starts from the same state.
+        An agreement with a charge that cannot be summed (for example one without ``BSPx1``) fails
+        alone: it is taken out of the scope, so its buckets and estimates stay as they were, the
+        rest of the scope is rebuilt, and the execution finishes with errors naming it. Only once
+        accumulation is done is the scope deleted -
+        exactly the subscriptions and agreements it resolved, not a fresh resolution - and
+        re-filled.
+
+        Only a subscription scope narrows the charge stream to its subscription: its statements
+        belong to agreements shared with sibling subscriptions whose buckets stay intact. Every
+        other scope rebuilds whole agreements, so its charges are kept by agreement afterwards
+        (``_filter_to_reset``); filtering them by the resolved subscription ids would drop
+        agreement-level charges (no subscription id) and charges of subscriptions with no stored
+        bucket yet, rebuilding those agreements short.
+        """
+        planned = await self.plan_reset(scope, db)
+        totals, planned = await self._accumulate_planned(scope, planned, db, execution)
+        kept = self._filter_to_reset(totals.accumulations.values(), planned)
+        await self.delete_planned(planned, db, dry_run=dry_run)
+        await self._refill(kept, planned, db, execution, dry_run=dry_run)
+
+    async def _accumulate_planned(
+        self, scope: Selector | None, planned: ResetScope, db: Database, execution: Execution
+    ) -> tuple[ChargeTotals, ResetScope]:
+        """Accumulate the planned scope's statements and take the failed agreements out of it."""
+        recorder = StatementProcessingRecorder(db.statement_processing_repository(), execution.id)
+        with self._scoped_charge_filter(self._narrowed_subscriptions(scope, planned)):
+            statements = await self.select_statements(tuple(sorted(planned.statement_agreements)))
+            totals = await self.accumulate_charges(statements, recorder, isolate_agreements=True)
+        execution.record_result(statements=len(statements))
+        failed = frozenset(totals.failed_agreements)
+        if failed:
+            execution.record_result(failed_agreements=", ".join(sorted(failed)))
+            execution.has_errors = True
+            planned = await self._without_agreements(planned, failed, db)
+        return totals, planned
 
     async def _tracked(
         self,
@@ -364,13 +414,11 @@ class UsageReportingPipeline:  # noqa: WPS214
         """
         recorder = StatementProcessingRecorder(db.statement_processing_repository(), execution.id)
         statements = await self.select_statements()
-        accumulations = list(await self.accumulate_charges(statements, recorder))
+        totals = await self.accumulate_charges(statements, recorder)
+        accumulations = list(totals.accumulations.values())
         await self.persist(accumulations, db.subscription_repository(), db.agreement_repository())
         report = await self.update_estimates(
-            accumulations,
-            db.subscription_repository(),
-            subscriptions=self._ctx.api_service.subscriptions,
-            dry_run=False,
+            accumulations, db.subscription_repository(), dry_run=False
         )
         await self.cleanup(db.subscription_repository(), db.agreement_repository())
         execution.record_result(
@@ -383,17 +431,14 @@ class UsageReportingPipeline:  # noqa: WPS214
 
     async def _refill(
         self,
+        kept: list[ChargeAccumulation],
         reset_scope: ResetScope,
         db: Database,
         execution: Execution,
         *,
         dry_run: bool,
     ) -> None:
-        """Re-accumulate the selector-defined reset scope's buckets, then prune old rows."""
-        recorder = StatementProcessingRecorder(db.statement_processing_repository(), execution.id)
-        statements = await self.select_statements(tuple(sorted(reset_scope.statement_agreements)))
-        accumulations = await self.accumulate_charges(statements, recorder)
-        kept = self._filter_to_reset(accumulations, reset_scope)
+        """Persist the reset scope's accumulated buckets, push their estimates, then prune."""
         await self.persist(
             kept,
             db.subscription_repository(),
@@ -401,35 +446,51 @@ class UsageReportingPipeline:  # noqa: WPS214
             agreement_ids=reset_scope.agreement_ids,
             dry_run=dry_run,
         )
-        report = await self.update_estimates(
-            kept,
-            db.subscription_repository(),
-            subscriptions=self._ctx.api_service.subscriptions,
-            dry_run=dry_run,
-        )
+        report = await self.update_estimates(kept, db.subscription_repository(), dry_run=dry_run)
         await self.cleanup(
             db.subscription_repository(),
             db.agreement_repository(),
             dry_run=dry_run,
         )
-        execution.record_result(
-            statements=len(statements),
-            accumulations=len(kept),
-            estimates_failed=report.failed_count,
-        )
+        execution.record_result(accumulations=len(kept), estimates_failed=report.failed_count)
         if report.has_failures:
             execution.has_errors = True
 
-    async def _reset_products(self, deleter: BucketDeleter) -> ResetScope:
-        """Delete each configured product's buckets and union their reset scopes."""
+    async def _plan_products(self, deleter: BucketDeleter) -> ResetScope:
+        """Resolve each configured product's scope and union them."""
         subscriptions: set[str] = set()
-        statement_agreements: set[str] = set()
+        agreements: set[str] = set()
         for product_id in self._ctx.product_ids:
-            outcome = await deleter.delete(ProductSelector(product_id))  # noqa: WPS476
-            subscriptions |= set(outcome.subscriptions)
-            statement_agreements |= deleter.statement_agreements
-        narrowed = frozenset(statement_agreements)
-        return ResetScope(frozenset(subscriptions), narrowed, narrowed)
+            resolved = await deleter.resolve(ProductSelector(product_id))  # noqa: WPS476
+            subscriptions |= resolved.subscriptions
+            agreements |= resolved.agreements
+        rebuilt = frozenset(agreements)
+        return ResetScope(frozenset(subscriptions), rebuilt, rebuilt)
+
+    def _deleter(self, db: Database, *, dry_run: bool) -> BucketDeleter:
+        """Build the bucket deleter over the database's repositories."""
+        api_service = self._ctx.api_service
+        return BucketDeleter(
+            db.subscription_repository(),
+            db.agreement_repository(),
+            api_service.client.commerce.subscriptions,
+            dry_run=dry_run,
+        )
+
+    def _narrowed_subscriptions(self, scope: Selector | None, reset: ResetScope) -> frozenset[str]:
+        """The subscriptions to narrow the charge stream to: only a subscription scope narrows."""
+        return reset.subscriptions if isinstance(scope, SubscriptionSelector) else frozenset()
+
+    async def _without_agreements(
+        self, planned: ResetScope, agreement_ids: frozenset[str], db: Database
+    ) -> ResetScope:
+        """Take the agreements and their stored subscriptions out of the planned scope."""
+        resolved = await self._deleter(db, dry_run=True).resolve_agreements(set(agreement_ids))
+        return ResetScope(
+            planned.subscriptions - resolved.subscriptions,
+            planned.statement_agreements - agreement_ids,
+            planned.agreement_ids - agreement_ids,
+        )
 
     def _filter_to_reset(
         self, accumulations: Iterable[ChargeAccumulation], reset: ResetScope

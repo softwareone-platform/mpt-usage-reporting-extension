@@ -1,4 +1,7 @@
+import asyncio
+
 import pytest
+import typer
 
 from mpt_usage_reporting_extension.services.execution_tracker import (
     ExecutionTracker,
@@ -44,6 +47,23 @@ async def test_track_finishes_failed_and_reraises(executions):
     executions.finish.assert_awaited_once_with(11, ExecutionStatus.FAILED, {"error": "boom"})
 
 
+async def test_track_finishes_failed_on_typer_exit(executions):
+    with pytest.raises(typer.Exit):
+        async with ExecutionTracker(executions).track(Command.RUN, {}):
+            raise typer.Exit(code=1)
+
+    executions.finish.assert_awaited_once_with(11, ExecutionStatus.FAILED, {"error": ""})
+
+
+@pytest.mark.parametrize("interrupt", [asyncio.CancelledError, KeyboardInterrupt])
+async def test_track_does_not_finalise_on_base_exception(executions, interrupt):
+    with pytest.raises(interrupt):
+        async with ExecutionTracker(executions).track(Command.RUN, {}):
+            raise interrupt()
+
+    executions.finish.assert_not_awaited()
+
+
 async def test_recorder_records_success(processing):
     async with StatementProcessingRecorder(processing, execution_id=5).record("BILL-1"):
         processing.start.assert_awaited_once_with(5, "BILL-1")
@@ -57,3 +77,12 @@ async def test_recorder_records_failure_and_reraises(processing):
             raise ValueError("bad")
 
     processing.finish.assert_awaited_once_with(99, StatementStatus.FAILURE, "bad")
+
+
+@pytest.mark.parametrize("interrupt", [asyncio.CancelledError, KeyboardInterrupt])
+async def test_recorder_does_not_finalise_on_base_exception(processing, interrupt):
+    with pytest.raises(interrupt):
+        async with StatementProcessingRecorder(processing, execution_id=5).record("BILL-1"):
+            raise interrupt()
+
+    processing.finish.assert_not_awaited()

@@ -1,6 +1,5 @@
 import asyncio
 import datetime as dt
-import logging
 from collections.abc import AsyncIterator
 from typing import Annotated, assert_never
 
@@ -33,8 +32,6 @@ from mpt_usage_reporting_extension.services.estimates_uploader import EstimatesU
 from mpt_usage_reporting_extension.types import Month
 from mpt_usage_reporting_extension.utils import last_month
 
-logger = logging.getLogger(__name__)
-
 
 class _ApiTargetResolver:
     """Enumerate the API subscriptions of a product or seller."""
@@ -49,7 +46,6 @@ class _ApiTargetResolver:
             async for sub in self._subscriptions.filter(self._query).select("id").iterate():
                 yield sub.id
         except MPTError as exc:
-            logger.warning("Upstream error resolving subscription ids: %s", exc)
             raise UpstreamSubscriptionError("Failed to resolve subscription ids") from exc
 
 

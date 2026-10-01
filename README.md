@@ -42,6 +42,7 @@ Shared meaning of common make targets is documented in:
 - [docs/contributing.md](docs/contributing.md): repository-specific development workflow
 - [docs/local-development.md](docs/local-development.md): local setup and service startup
 - [docs/deployment.md](docs/deployment.md): runtime configuration and deployment-facing settings
+- [docs/error-handling.md](docs/error-handling.md): exception hierarchy and runtime error flow
 - [docs/testing.md](docs/testing.md): testing strategy and commands
 - [docs/migrations.md](docs/migrations.md): migration workflow and current constraints
 - [docs/documentation.md](docs/documentation.md): repository documentation rules
