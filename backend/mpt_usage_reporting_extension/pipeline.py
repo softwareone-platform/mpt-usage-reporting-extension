@@ -239,9 +239,11 @@ class UsageReportingPipeline:  # noqa: WPS214
         """
         anchor = last_month(dt.datetime.now(tz=dt.UTC).date())
         api_service = self._ctx.api_service
+        # Both subscription services on purpose; see the EstimatesUploader docstring.
         report: EstimateUploadReport = await EstimatesUploader(
             subscription_repo,
             api_service.subscriptions,
+            api_service.client.commerce.subscriptions,
             dry_run=dry_run,
         ).update(
             updatable_subscription_ids(accumulations),
@@ -425,6 +427,7 @@ class UsageReportingPipeline:  # noqa: WPS214
             statements=len(statements),
             accumulations=len(accumulations),
             estimates_failed=report.failed_count,
+            estimates_skipped=report.skipped_count,
         )
         if report.has_failures:
             execution.has_errors = True
@@ -452,7 +455,11 @@ class UsageReportingPipeline:  # noqa: WPS214
             db.agreement_repository(),
             dry_run=dry_run,
         )
-        execution.record_result(accumulations=len(kept), estimates_failed=report.failed_count)
+        execution.record_result(
+            accumulations=len(kept),
+            estimates_failed=report.failed_count,
+            estimates_skipped=report.skipped_count,
+        )
         if report.has_failures:
             execution.has_errors = True
 

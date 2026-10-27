@@ -147,9 +147,10 @@ async def push_estimates_by_id(api_service: MPTAPIService, selector: Selector) -
         subscription_ids = resolve_targets(
             selector, repo, api_service.client.commerce.subscriptions
         )
-        report = await EstimatesUploader(repo, api_service.subscriptions).update(
-            subscription_ids, anchor.year, Month(anchor.month)
-        )
+        # Both subscription services on purpose; see the EstimatesUploader docstring.
+        report = await EstimatesUploader(
+            repo, api_service.subscriptions, api_service.client.commerce.subscriptions
+        ).update(subscription_ids, anchor.year, Month(anchor.month))
     report.render()
     if report.has_failures:
         raise typer.Exit(code=1)

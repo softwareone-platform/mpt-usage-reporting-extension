@@ -21,6 +21,10 @@ duplicate those tables.
   (`GET /public/v1/billing/statements` and the per-statement charges streaming
   endpoint); `MPT_API_TOKEN` must be an operations-scoped token and is provided
   via `backend/.env.local` for local runs.
+- Every estimate upload (`run`, `recalculate`, `push-estimates`) first lists the
+  target subscriptions with `GET /public/v1/commerce/subscriptions`, filtered by
+  `id` in chunks of 100 and selecting `id` and `status`, and then sends `PUT
+  /public/v1/commerce/subscriptions/{id}` only to `Active` and `Suspended` ones.
 - Airtable is only used when `MPT_TOOL_STORAGE_TYPE=airtable`; with the default
   `local` storage the Airtable variables can remain unset.
 - OpenTelemetry tracing is bootstrapped by the SDK runtime in serve mode and by the

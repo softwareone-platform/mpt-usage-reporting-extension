@@ -205,3 +205,19 @@ def test_exits_on_failure(mocker, runner, push_collaborators):
     result = runner.invoke(cli.app, ["push-estimates", "by-id", "--subscription-id", "SUB-1"])
 
     assert result.exit_code == 1
+
+
+def test_builds_the_uploader_with_both_subscription_services(mocker, runner, push_collaborators):
+    _resolve_targets, uploader = push_collaborators
+    uploader.update = mocker.AsyncMock(return_value=mocker.Mock(has_failures=False))
+    estimates = cli.commands.push_estimates_by_id
+    service = estimates.build_service.return_value
+    database = estimates.PostgresDatabase.return_value
+
+    runner.invoke(cli.app, ["push-estimates", "by-id", "--subscription-id", "SUB-1"])  # act
+
+    estimates.EstimatesUploader.assert_called_once_with(
+        database.subscription_repository.return_value,
+        service.subscriptions,
+        service.client.commerce.subscriptions,
+    )

@@ -53,27 +53,33 @@ and greppable.
 
 ### Estimate Upload Report
 
-`run` and `recalculate` log one line per subscription estimate they process, applied or failed
-(`UploadOutcome.line()` in
+`run` and `recalculate` log one line per subscription estimate they process, applied, skipped,
+or failed (`UploadOutcome.line()` in
 [`backend/mpt_usage_reporting_extension/services/estimates_uploader.py`](../backend/mpt_usage_reporting_extension/services/estimates_uploader.py)):
 
 ```text
 subscription=SUB-1234-5678 PPxM=12.3400 SPxM=15.0000 PPxY=148.0800 SPxY=180.0000 status=OK
 subscription=SUB-1234-5678 PPxM=null SPxM=null PPxY=148.0800 SPxY=180.0000 status=DRY-RUN
+subscription=SUB-1234-5678 status=SKIPPED reason="Terminated is not Active or Suspended"
 subscription=SUB-1234-5678 status=FAILED error="value must be 9999.000 or less"
 ```
 
 - `subscription` is the MPT subscription id the estimate belongs to.
 - The four price fields are the computed estimate, each to four decimal places. A figure with
   no backing buckets renders as `null` rather than a fabricated `0`.
-- `status` must be one of `OK` (the `PUT` was applied), `FAILED` (the upload was rejected or
-  raised), or `DRY-RUN` (the estimate was computed and the `PUT` suppressed). Only
-  `recalculate` accepts `--dry-run`, so `run` never emits a `DRY-RUN` line.
+- `status` must be one of `OK` (the `PUT` was applied), `SKIPPED` (the subscription's platform
+  status is not `Active` or `Suspended`, so no estimate is computed or sent; `reason=` names
+  that status), `FAILED` (the upload was rejected or raised), or `DRY-RUN` (the estimate was
+  computed and the `PUT` suppressed). Only `recalculate` accepts `--dry-run`, so `run` never emits a `DRY-RUN` line;
+  a dry run still reports `SKIPPED` lines.
 - A `FAILED` line carries no price fields and appends `error=` with the failure reason — an MPT
   API rejection, a refused upload (the run's charges for the subscription carry more than one
-  purchase currency), or an unexpected exception, all
-  rendered as the exception's own text. Values holding whitespace are quoted, so the pairs on a
+  purchase currency), a failed subscription status lookup, or an unexpected exception, all
+  rendered as the exception's own text. An id with no subscription on the platform fails with
+  `error="subscription not found"`. Values holding whitespace are quoted, so the pairs on a
   line stay separable.
+- The closing summary counts all three: `Uploaded estimates for 2026-06 to 12 subscription(s),
+  2 skipped, 0 failed`. Skipped subscriptions are not failures and do not change the exit code.
 
 ## Observability Settings
 

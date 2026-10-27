@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from mpt_api_client.exceptions import MPTAPIError
+from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
 from mpt_extension_sdk.observability import trace_span
 from mpt_extension_sdk.services.mpt_api_service.subscription import SubscriptionService
 
@@ -19,7 +20,11 @@ from mpt_usage_reporting_extension.persistence.protocols import (
     SubscriptionAccumulationRepository,
 )
 from mpt_usage_reporting_extension.services.estimate_currency import EstimateCurrencyGuard
-from mpt_usage_reporting_extension.services.helper import as_async_iterator
+from mpt_usage_reporting_extension.services.helper import as_async_iterator, chunked
+from mpt_usage_reporting_extension.services.subscription_status import (
+    WRITABLE_SUBSCRIPTION_STATUSES,
+    SubscriptionStatusLookup,
+)
 from mpt_usage_reporting_extension.types import Month, Year
 from mpt_usage_reporting_extension.utils import month_ordinal, sanitize_log_value
 
@@ -29,6 +34,11 @@ _DEFAULT_MAX_CONCURRENCY = 10
 _PRICE_KEYS = ("PPxM", "SPxM", "PPxY", "SPxY")
 _MONTHS_PER_YEAR = 12
 _ROLLING_MONTHS = 12
+_STATUS_CHUNK_SIZE = 100
+_WRITABLE_STATUSES_LABEL = " or ".join(WRITABLE_SUBSCRIPTION_STATUSES)
+_NOT_FOUND_ERROR = "subscription not found"
+
+type _StatusLookup = tuple[dict[str, str | None], Exception | None]
 
 
 def updatable_subscription_ids(
@@ -56,6 +66,8 @@ class UploadOutcome:
 
     subscription_id: str
     failed: bool = False
+    skipped: bool = False
+    subscription_status: str | None = None
     estimate: PriceEstimate | None = None
     exception: BaseException | None = None
     error: str | None = None
@@ -64,10 +76,13 @@ class UploadOutcome:
     def line(self) -> str:
         """The single log line summarizing this outcome.
 
-        Every value the caller does not control - the subscription id and the upstream error
-        text - goes through :func:`sanitize_log_value`, so neither can forge a report line.
+        Every value the caller does not control - the subscription id, its platform status, and
+        the upstream error text - goes through :func:`sanitize_log_value`, so none can forge a
+        report line.
         """
         subscription = sanitize_log_value(self.subscription_id)
+        if self.skipped:
+            return f"subscription={subscription} status=SKIPPED{self._skip_reason()}"
         if self.failed or self.estimate is None:
             return f"subscription={subscription} status=FAILED{self._detail()}"
         prices = self.estimate.to_dict()
@@ -75,6 +90,12 @@ class UploadOutcome:
         body = " ".join(labels)
         status = "DRY-RUN" if self.dry_run else "OK"
         return f"subscription={subscription} {body} status={status}"
+
+    def _skip_reason(self) -> str:
+        """The reason appended to a skipped outcome's line: its status is not a writable one."""
+        status = self.subscription_status or "Unknown status"
+        reason = f"{status} is not {_WRITABLE_STATUSES_LABEL}"
+        return f" reason={sanitize_log_value(reason)}"
 
     def _detail(self) -> str:
         """The failure reason appended to a failed outcome's line, empty when there is none."""
@@ -96,12 +117,15 @@ class EstimateUploadReport:
         month_label = str(month).zfill(2)
         self._period = f"{year}-{month_label}"
         self._ok = 0
+        self._skipped = 0
         self._failed = 0
         self._dry_run = dry_run
 
     def record(self, outcome: UploadOutcome) -> None:
         """Log the outcome's line and tally it."""
-        if outcome.failed:
+        if outcome.skipped:
+            self._skipped += 1
+        elif outcome.failed:
             self._failed += 1
         else:
             self._ok += 1
@@ -121,19 +145,17 @@ class EstimateUploadReport:
         """How many subscriptions failed to upload."""
         return self._failed
 
+    @property
+    def skipped_count(self) -> int:
+        """How many subscriptions were skipped for not being Active or Suspended."""
+        return self._skipped
+
     def _summary(self) -> str:
-        if not (self._ok or self._failed):
-            if self._dry_run:
-                return "Dry-run estimates to 0 subscription(s), 0 failed"
-            return "Uploaded estimates to 0 subscription(s), 0 failed"
-        if self._dry_run:
-            return (
-                f"Dry-run estimates for {self._period} to "
-                f"{self._ok} subscription(s), {self._failed} failed"
-            )
+        verb = "Dry-run" if self._dry_run else "Uploaded"
+        period = f" for {self._period}" if self._ok or self._skipped or self._failed else ""
         return (
-            f"Uploaded estimates for {self._period} to "
-            f"{self._ok} subscription(s), {self._failed} failed"
+            f"{verb} estimates{period} to {self._ok} subscription(s), "
+            f"{self._skipped} skipped, {self._failed} failed"
         )
 
 
@@ -291,18 +313,25 @@ class PriceEstimateConsumer:
 
 
 class EstimatesUploader:
-    """Link the estimate producer to the upload consumer, bounded to max_concurrency in flight."""
+    """Link the estimate producer to the upload consumer, bounded to max_concurrency in flight.
+
+    ``subscriptions`` and ``subscription_listing`` reach the same commerce subscriptions endpoint.
+    The SDK ``SubscriptionService`` sends each estimate ``PUT``, but it offers no listing, so the
+    status check reads statuses through the client's own resource, ``subscription_listing``.
+    """
 
     def __init__(
         self,
         accumulations: SubscriptionAccumulationRepository,
         subscriptions: SubscriptionService,
+        subscription_listing: AsyncSubscriptionsService,
         max_concurrency: int = _DEFAULT_MAX_CONCURRENCY,
         *,
         dry_run: bool = False,
     ) -> None:
         self._producer = PriceEstimateProducer(_EstimateCalculator(accumulations))
         self._subscriptions = subscriptions
+        self._status_lookup = SubscriptionStatusLookup(subscription_listing)
         self._dry_run = dry_run
         self._semaphore = asyncio.Semaphore(max_concurrency)
 
@@ -330,6 +359,7 @@ class EstimatesUploader:
         tasks, and uploads stay bounded by ``max_concurrency`` regardless of the id count.
         ``purchase_currencies`` (see ``charged_currencies``) arms the currency guard: an
         estimate is refused when its charges in this run were priced in more than one currency.
+        Only Active or Suspended subscriptions are uploaded; the rest are reported as skipped.
         """
         logger.info(
             "Uploading estimates for period %d-%02d%s",
@@ -343,13 +373,56 @@ class EstimatesUploader:
         )
         async with asyncio.TaskGroup() as group:
             async for subscription_id, estimate in self._producer.produce(
-                subscription_ids, year, month
+                self._writable_ids(subscription_ids, report), year, month
             ):
                 await self._semaphore.acquire()
                 group.create_task(  # type: ignore[unused-awaitable]  # owned by the group
                     self._record(consumer, report, subscription_id, estimate)
                 )
         return report
+
+    async def _writable_ids(
+        self,
+        subscription_ids: AsyncIterable[str] | Iterable[str],
+        report: EstimateUploadReport,
+    ) -> AsyncIterator[str]:
+        """Yield the ids whose subscription is Active or Suspended, reading statuses in chunks.
+
+        Every other id is recorded on the report: as skipped when its subscription has another
+        status, as failed when no such subscription exists. When a chunk's status lookup fails,
+        its ids are recorded as failed rather than uploaded blind, so one chunk cannot abort the
+        run.
+        """
+        async for chunk in chunked(as_async_iterator(subscription_ids), _STATUS_CHUNK_SIZE):
+            statuses, error = await self._read_statuses(chunk)
+            for subscription_id in chunk:
+                outcome = self._status_outcome(subscription_id, statuses, error)
+                if outcome is None:
+                    yield subscription_id
+                else:
+                    report.record(outcome)
+
+    async def _read_statuses(self, chunk: list[str]) -> _StatusLookup:
+        """The chunk's statuses, or no statuses and the error when the lookup fails."""
+        try:
+            return await self._status_lookup.statuses(chunk), None
+        except Exception as exc:
+            logger.exception("Failed to read the status of %d subscription(s)", len(chunk))
+            return {}, exc
+
+    @staticmethod
+    def _status_outcome(  # noqa: WPS602  # a module function would exceed the WPS202 cap
+        subscription_id: str, statuses: Mapping[str, str | None], error: Exception | None
+    ) -> UploadOutcome | None:
+        """The outcome a subscription's status settles before upload, or None when writable."""
+        if error is not None:
+            return UploadOutcome(subscription_id, failed=True, exception=error, error=str(error))
+        if subscription_id not in statuses:
+            return UploadOutcome(subscription_id, failed=True, error=_NOT_FOUND_ERROR)
+        status = statuses[subscription_id]
+        if status in WRITABLE_SUBSCRIPTION_STATUSES:
+            return None
+        return UploadOutcome(subscription_id, skipped=True, subscription_status=status)
 
     async def _record(
         self,

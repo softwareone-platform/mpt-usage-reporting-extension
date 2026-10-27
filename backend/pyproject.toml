@@ -101,6 +101,9 @@ per-file-ignores = [
   "*cli/commands/push_estimates_by_id.py:WPS202,WPS201",
   # The pipeline orchestrates every stage, so it sits one collaborator over the import cap.
   "*pipeline.py:WPS201",
+  # The uploader pairs the estimate store with two API collaborators (the SDK update service and
+  # the status lookup's commerce listing), putting it two over the import cap.
+  "*services/estimates_uploader.py:WPS201",
   # The package's exception hierarchy lives in one flat module by design, one class per error.
   "*exceptions.py:WPS202",
 ]
