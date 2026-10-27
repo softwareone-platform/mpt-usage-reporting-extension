@@ -121,3 +121,21 @@ def test_exits_on_failure(mocker, runner, updated_at_collaborators):
     )
 
     assert result.exit_code == 1
+
+
+def test_builds_the_uploader_with_both_subscription_services(
+    mocker, runner, updated_at_collaborators
+):
+    _subscription_ids, uploader = updated_at_collaborators
+    uploader.update = mocker.AsyncMock(return_value=mocker.Mock(has_failures=False))
+    estimates = cli.commands.push_estimates_by_updated_at
+    service = estimates.build_service.return_value
+    database = estimates.PostgresDatabase.return_value
+
+    runner.invoke(cli.app, ["push-estimates", "by-updated-at"])  # act
+
+    estimates.EstimatesUploader.assert_called_once_with(
+        database.subscription_repository.return_value,
+        service.subscriptions,
+        service.client.commerce.subscriptions,
+    )

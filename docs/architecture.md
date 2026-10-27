@@ -104,15 +104,23 @@ any API work. Each stage is a service constructed with only the dependencies it 
    concurrently `PUT`s `{"price": {SPxM, SPxY}}` back to the subscription via the MPT API —
    only the sales prices are sent; the platform recalculates the purchase prices and tags the
    price with the authorization's currency (the tag is not writable) — skipping
-   synthetic (`agreement_additional_*`) and dateless buckets. Before each `PUT`, the currency
+   synthetic (`agreement_additional_*`) and dateless buckets. Only `Active` and `Suspended`
+   subscriptions receive an estimate (canon BR-013 limits Operations writes to those states):
+   `SubscriptionStatusLookup` (`services/subscription_status.py`) reads the ids' statuses in
+   chunks of 100 with RQL `id in (...)`, selecting `id` and `status`. A subscription with another
+   status is reported as `SKIPPED`, and an id the listing does not return (no such subscription)
+   as `FAILED`; neither gets an estimate computed or sent. Their charges are still accumulated,
+   so agreement buckets stay complete. This one check covers `run`,
+   `recalculate`, `push-estimates` and the data migrations. Before each `PUT`, the currency
    guard (`services/estimate_currency.py`) refuses, as a `FAILED` outcome, a subscription whose
    charges in the run carry more than one purchase currency, since their sum has no single
    currency. It makes no API calls: a single purchase currency is not compared with the
    agreement, because the platform derives both the charges' purchase currency and the
    subscription's price currency from the same authorization. The guard is armed only by
    `run`/`recalculate`, where charges are streamed. It logs a per-subscription report (values +
-   `OK`/`FAILED`) and exits
-   non-zero on any failure. Charge streaming logs `[k/N]` progress per statement.
+   `OK`/`SKIPPED`/`FAILED`) and exits
+   non-zero on any failure; skipped subscriptions are not failures. The execution result records
+   `estimates_failed` and `estimates_skipped`. Charge streaming logs `[k/N]` progress per statement.
 
 ## Persistence (PostgreSQL)
 
@@ -153,6 +161,7 @@ can serve the SDK's built-in endpoints.
 | `accumulation.py`, `context.py`, `window.py` | Accumulation keys/totals, run context, and the date window |
 | `services/charge_persistence.py`, `services/bucket_delete.py`, `persistence/` | Persisting accumulated totals to PostgreSQL and deleting buckets by scope/month range |
 | `services/estimates_uploader.py` | `EstimatesUploader` — push `SPxM`/`SPxY` estimates to subscriptions (purchase prices are recalculated by the platform; figures without backing buckets are sent as `null`, and negative totals are clamped to 0 because MPT rejects negative prices), with a per-run report |
+| `services/subscription_status.py` | `SubscriptionStatusLookup` — read subscription statuses by id in one RQL query per chunk, so only `Active` or `Suspended` subscriptions receive an estimate |
 | `services/estimate_currency.py` | `EstimateCurrencyGuard` — refuse an estimate whose charges in the run carry more than one purchase currency; `split_currency_agreement_ids` — list the agreements billed in a currency other than their price currency (used by the MPT-25312 migration) |
 | `services/execution_notifier.py` | `ExecutionNotifier` — report each `run`/`recalculate` execution to MS Teams (success with the run report, or failure with error and stacktrace); disabled when `MPT_MSTEAMS_WEBHOOK_URL` is unset |
 | `steps.py` | `logged_step` — logs each pipeline stage's start, end, and duration alongside its `@trace_span` |
