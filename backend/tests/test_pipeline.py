@@ -1,4 +1,5 @@
 import datetime as dt
+from types import SimpleNamespace
 
 import pytest
 import typer
@@ -158,6 +159,7 @@ async def test_run_arms_the_currency_guard_with_the_charged_currencies(
     uploader_class.assert_called_once_with(
         stub_database.subscription_repository.return_value,
         ctx.api_service.subscriptions,
+        ctx.api_service.client.commerce.subscriptions,
         dry_run=False,
     )
     update_kwargs = uploader_class.return_value.update.await_args.kwargs
@@ -269,6 +271,16 @@ async def test_recalculate_exits_on_upload_failure(mocker, stub_database, usage,
     assert exc_info.value.exit_code == 1
 
 
+@pytest.fixture
+def sub1_listed_as_active(ctx):
+    commerce = ctx.api_service.client.commerce
+    status_query = commerce.subscriptions.filter.return_value
+    listing = status_query.select.return_value
+    listing.iterate.return_value.__aiter__.return_value = [SimpleNamespace(id="SUB-1")]
+    return listing
+
+
+@pytest.mark.usefixtures("sub1_listed_as_active")
 async def test_recalculate_dry_run_runs_reads_but_skips_mutations(
     mocker,
     stub_database,

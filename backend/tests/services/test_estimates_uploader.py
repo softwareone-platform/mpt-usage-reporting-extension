@@ -3,7 +3,8 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from mpt_api_client.exceptions import MPTAPIError
+from mpt_api_client.exceptions import MPTAPIError, MPTError
+from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
 
 from mpt_usage_reporting_extension.persistence.models import (
     PriceEstimate,
@@ -12,11 +13,14 @@ from mpt_usage_reporting_extension.persistence.models import (
 from mpt_usage_reporting_extension.services.estimate_currency import EstimateCurrencyGuard
 from mpt_usage_reporting_extension.services.estimates_uploader import (
     EstimatesUploader,
+    EstimateUploadReport,
     PriceEstimateConsumer,
     PriceEstimateProducer,
     UploadOutcome,
     updatable_subscription_ids,
 )
+from mpt_usage_reporting_extension.services.helper import as_async_iterator
+from mpt_usage_reporting_extension.services.subscription_status import StatusCheck
 from mpt_usage_reporting_extension.types import Month
 
 
@@ -59,6 +63,31 @@ def subscriptions(mocker):
 @pytest.fixture
 def update(subscriptions):
     return subscriptions.update
+
+
+@pytest.fixture
+def subscription_listing(mocker):
+    return mocker.create_autospec(AsyncSubscriptionsService, instance=True)
+
+
+@pytest.fixture
+def non_writable_ids():
+    return frozenset()
+
+
+@pytest.fixture(autouse=True)
+def writable_filter(mocker, non_writable_ids):
+    async def check(subscription_ids):
+        async for subscription_id in as_async_iterator(subscription_ids):
+            yield StatusCheck(subscription_id, writable=subscription_id not in non_writable_ids)
+
+    filter_class = mocker.patch(
+        "mpt_usage_reporting_extension.services.estimates_uploader.WritableSubscriptionFilter",
+        autospec=True,
+    )
+    writable_filter = filter_class.return_value
+    writable_filter.check.side_effect = check
+    return writable_filter
 
 
 @pytest.fixture
@@ -106,8 +135,8 @@ def subscription_repo(mocker, stored_bucket, year, month):
 
 
 @pytest.fixture
-def updater(subscription_repo, subscriptions):
-    return EstimatesUploader(subscription_repo, subscriptions)
+def updater(subscription_repo, subscriptions, subscription_listing):
+    return EstimatesUploader(subscription_repo, subscriptions, subscription_listing)
 
 
 async def _astream(*subscription_ids):
@@ -156,12 +185,14 @@ def _bucket(year, month, ppx1, spx1):
     )
 
 
-async def test_update_clamps_negative_estimates_to_zero(mocker, subscriptions, update, year, month):
+async def test_update_clamps_negative_estimates_to_zero(
+    mocker, subscriptions, subscription_listing, update, year, month
+):
     negative_bucket = _bucket(year, month, ppx1="-0.25", spx1="-0.0001932354")
     window = {(year, month): negative_bucket}
     repo = mocker.AsyncMock()
     repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
-    updater = EstimatesUploader(repo, subscriptions)
+    updater = EstimatesUploader(repo, subscriptions, subscription_listing)
 
     report = await updater.update(["SUB-1"], year, month)  # act
 
@@ -169,13 +200,15 @@ async def test_update_clamps_negative_estimates_to_zero(mocker, subscriptions, u
     assert not report.has_failures
 
 
-async def test_update_clamps_each_price_independently(mocker, subscriptions, update, year, month):
+async def test_update_clamps_each_price_independently(
+    mocker, subscriptions, subscription_listing, update, year, month
+):
     anchor_bucket = _bucket(year, month, ppx1=4, spx1=-1)
     earlier_bucket = _bucket(year, Month.MAY, ppx1=-6, spx1=3)
     window = {(year, month): anchor_bucket, (year, Month.MAY): earlier_bucket}
     repo = mocker.AsyncMock()
     repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
-    updater = EstimatesUploader(repo, subscriptions)
+    updater = EstimatesUploader(repo, subscriptions, subscription_listing)
 
     await updater.update(["SUB-1"], year, month)  # act
 
@@ -183,13 +216,13 @@ async def test_update_clamps_each_price_independently(mocker, subscriptions, upd
 
 
 async def test_update_carries_monthly_forward_when_anchor_month_has_no_data(
-    mocker, subscriptions, update, year, month
+    mocker, subscriptions, subscription_listing, update, year, month
 ):
     earlier_bucket = _bucket(year, Month.MAY, ppx1="2.50", spx1="3.75")
     window = {(year, Month.MAY): earlier_bucket}
     repo = mocker.AsyncMock()
     repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
-    updater = EstimatesUploader(repo, subscriptions)
+    updater = EstimatesUploader(repo, subscriptions, subscription_listing)
 
     report = await updater.update(["SUB-1"], year, month)  # act
 
@@ -198,7 +231,7 @@ async def test_update_carries_monthly_forward_when_anchor_month_has_no_data(
 
 
 async def test_update_carries_forward_the_most_recent_month(
-    mocker, subscriptions, update, year, month
+    mocker, subscriptions, subscription_listing, update, year, month
 ):
     # both months precede the JUNE anchor, so the newer one (MAY) must supply the monthly pair
     window = {
@@ -207,7 +240,7 @@ async def test_update_carries_forward_the_most_recent_month(
     }
     repo = mocker.AsyncMock()
     repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
-    updater = EstimatesUploader(repo, subscriptions)
+    updater = EstimatesUploader(repo, subscriptions, subscription_listing)
 
     await updater.update(["SUB-1"], year, month)  # act
 
@@ -215,13 +248,13 @@ async def test_update_carries_forward_the_most_recent_month(
 
 
 async def test_update_carries_forward_negative_month_as_zero(
-    mocker, subscriptions, update, year, month
+    mocker, subscriptions, subscription_listing, update, year, month
 ):
     negative_bucket = _bucket(year, Month.MAY, ppx1="-2.50", spx1="-3.75")
     window = {(year, Month.MAY): negative_bucket}
     repo = mocker.AsyncMock()
     repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
-    updater = EstimatesUploader(repo, subscriptions)
+    updater = EstimatesUploader(repo, subscriptions, subscription_listing)
 
     await updater.update(["SUB-1"], year, month)  # act
 
@@ -229,14 +262,14 @@ async def test_update_carries_forward_negative_month_as_zero(
 
 
 async def test_update_carries_forward_zero_month_as_zero(
-    mocker, subscriptions, update, year, month
+    mocker, subscriptions, subscription_listing, update, year, month
 ):
     # a billed month totalling 0 is real data, so it carries forward as 0 rather than null
     zero_bucket = _bucket(year, Month.MAY, ppx1=0, spx1=0)
     window = {(year, Month.MAY): zero_bucket}
     repo = mocker.AsyncMock()
     repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
-    updater = EstimatesUploader(repo, subscriptions)
+    updater = EstimatesUploader(repo, subscriptions, subscription_listing)
 
     await updater.update(["SUB-1"], year, month)  # act
 
@@ -244,13 +277,13 @@ async def test_update_carries_forward_zero_month_as_zero(
 
 
 async def test_update_uploads_all_null_when_window_is_empty(
-    mocker, subscriptions, update, year, month
+    mocker, subscriptions, subscription_listing, update, year, month
 ):
     out_of_window_bucket = _bucket(year, Month.JULY, ppx1="35542.62", spx1="36668.36")
     window = {(year, Month.JULY): out_of_window_bucket}  # one month after the anchor
     repo = mocker.AsyncMock()
     repo.get.side_effect = lambda subscription_id, year, month: window.get((year, month))
-    updater = EstimatesUploader(repo, subscriptions)
+    updater = EstimatesUploader(repo, subscriptions, subscription_listing)
 
     report = await updater.update(["SUB-1"], year, month)  # act
 
@@ -394,19 +427,27 @@ async def test_consumer_dry_run_skips_update(subscriptions, update, price_estima
     assert outcome == UploadOutcome("SUB-1", estimate=price_estimate, dry_run=True)
 
 
-async def test_update_caps_concurrency(subscription_repo, subscriptions, year, month):
+async def test_update_caps_concurrency(
+    subscription_repo, subscriptions, subscription_listing, year, month
+):
     tracker = _ConcurrencyTracker(parties=2)
     subscriptions.update.side_effect = tracker.track
     subscription_ids = [f"SUB-{index}" for index in range(4)]
 
-    updater = EstimatesUploader(subscription_repo, subscriptions, max_concurrency=2)
+    updater = EstimatesUploader(
+        subscription_repo, subscriptions, subscription_listing, max_concurrency=2
+    )
     await updater.update(subscription_ids, year, month)  # act
 
     assert tracker.peak == 2  # 4 subscriptions, capped at 2 (would be 4 without the bound)
 
 
-async def test_update_dry_run_skips_api_updates(subscription_repo, subscriptions, year, month):
-    updater = EstimatesUploader(subscription_repo, subscriptions, dry_run=True)
+async def test_update_dry_run_skips_api_updates(
+    subscription_repo, subscriptions, subscription_listing, year, month
+):
+    updater = EstimatesUploader(
+        subscription_repo, subscriptions, subscription_listing, dry_run=True
+    )
 
     report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
 
@@ -455,3 +496,85 @@ def test_line_keys_the_failure_reason(error, expected):
     result = outcome.line()
 
     assert result == expected
+
+
+@pytest.mark.parametrize("non_writable_ids", [frozenset(("SUB-2",))])
+async def test_update_skips_subscriptions_not_active_or_suspended(updater, update, year, month):
+    report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
+
+    update.assert_called_once_with("SUB-1", {"price": {"SPxM": 1.0, "SPxY": 1.0}})
+    assert not report.has_failures
+
+
+@pytest.mark.parametrize("non_writable_ids", [frozenset(("SUB-1",))])
+async def test_update_logs_a_skipped_subscription(updater, year, month, caplog):
+    caplog.set_level("INFO")
+
+    await updater.update(["SUB-1"], year, month)  # act
+
+    assert 'subscription=SUB-1 status=SKIPPED reason="not Active or Suspended"' in caplog.text
+
+
+@pytest.mark.parametrize("non_writable_ids", [frozenset(("SUB-1",))])
+async def test_update_dry_run_skips_subscriptions_not_active_or_suspended(
+    subscription_repo, subscriptions, subscription_listing, year, month, caplog
+):
+    caplog.set_level("INFO")
+    updater = EstimatesUploader(
+        subscription_repo, subscriptions, subscription_listing, dry_run=True
+    )
+
+    await updater.update(["SUB-1"], year, month)  # act
+
+    assert "subscription=SUB-1 status=SKIPPED" in caplog.text
+
+
+async def test_update_fails_a_subscription_whose_status_lookup_failed(
+    updater, update, writable_filter, year, month
+):
+    async def check(subscription_ids):
+        async for subscription_id in as_async_iterator(subscription_ids):
+            yield StatusCheck(subscription_id, writable=False, error=MPTError("boom"))
+
+    writable_filter.check.side_effect = check
+
+    report = await updater.update(["SUB-1", "SUB-2"], year, month)  # act
+
+    update.assert_not_called()
+    assert report.failed_count == 2
+
+
+def test_line_keys_the_status_of_a_skipped_subscription():
+    outcome = UploadOutcome("SUB-1", skipped=True)
+
+    result = outcome.line()
+
+    assert result == 'subscription=SUB-1 status=SKIPPED reason="not Active or Suspended"'
+
+
+@pytest.mark.parametrize(
+    ("outcomes", "dry_run", "expected"),
+    [
+        ([], False, "Uploaded estimates to 0 subscription(s), 0 skipped, 0 failed"),
+        ([], True, "Dry-run estimates to 0 subscription(s), 0 skipped, 0 failed"),
+        (
+            [{"skipped": True}, {"failed": True}],
+            False,
+            "Uploaded estimates for 2026-06 to 0 subscription(s), 1 skipped, 1 failed",
+        ),
+        (
+            [{"skipped": True}],
+            True,
+            "Dry-run estimates for 2026-06 to 0 subscription(s), 1 skipped, 0 failed",
+        ),
+    ],
+)
+def test_render_summarizes_ok_skipped_and_failed(outcomes, dry_run, expected, year, month, caplog):
+    caplog.set_level("INFO")
+    report = EstimateUploadReport(year, month, dry_run=dry_run)
+    for fields in outcomes:
+        report.record(UploadOutcome("SUB-1", **fields))
+
+    report.render()  # act
+
+    assert caplog.records[-1].getMessage() == expected

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from mpt_api_client.exceptions import MPTAPIError
+from mpt_api_client.resources.commerce.subscriptions import AsyncSubscriptionsService
 from mpt_extension_sdk.observability import trace_span
 from mpt_extension_sdk.services.mpt_api_service.subscription import SubscriptionService
 
@@ -20,6 +21,9 @@ from mpt_usage_reporting_extension.persistence.protocols import (
 )
 from mpt_usage_reporting_extension.services.estimate_currency import EstimateCurrencyGuard
 from mpt_usage_reporting_extension.services.helper import as_async_iterator
+from mpt_usage_reporting_extension.services.subscription_status import (
+    WritableSubscriptionFilter,
+)
 from mpt_usage_reporting_extension.types import Month, Year
 from mpt_usage_reporting_extension.utils import month_ordinal, sanitize_log_value
 
@@ -29,6 +33,7 @@ _DEFAULT_MAX_CONCURRENCY = 10
 _PRICE_KEYS = ("PPxM", "SPxM", "PPxY", "SPxY")
 _MONTHS_PER_YEAR = 12
 _ROLLING_MONTHS = 12
+_SKIPPED_REASON = "not Active or Suspended"
 
 
 def updatable_subscription_ids(
@@ -56,6 +61,7 @@ class UploadOutcome:
 
     subscription_id: str
     failed: bool = False
+    skipped: bool = False
     estimate: PriceEstimate | None = None
     exception: BaseException | None = None
     error: str | None = None
@@ -68,6 +74,8 @@ class UploadOutcome:
         text - goes through :func:`sanitize_log_value`, so neither can forge a report line.
         """
         subscription = sanitize_log_value(self.subscription_id)
+        if self.skipped:
+            return f'subscription={subscription} status=SKIPPED reason="{_SKIPPED_REASON}"'
         if self.failed or self.estimate is None:
             return f"subscription={subscription} status=FAILED{self._detail()}"
         prices = self.estimate.to_dict()
@@ -96,12 +104,15 @@ class EstimateUploadReport:
         month_label = str(month).zfill(2)
         self._period = f"{year}-{month_label}"
         self._ok = 0
+        self._skipped = 0
         self._failed = 0
         self._dry_run = dry_run
 
     def record(self, outcome: UploadOutcome) -> None:
         """Log the outcome's line and tally it."""
-        if outcome.failed:
+        if outcome.skipped:
+            self._skipped += 1
+        elif outcome.failed:
             self._failed += 1
         else:
             self._ok += 1
@@ -122,18 +133,11 @@ class EstimateUploadReport:
         return self._failed
 
     def _summary(self) -> str:
-        if not (self._ok or self._failed):
-            if self._dry_run:
-                return "Dry-run estimates to 0 subscription(s), 0 failed"
-            return "Uploaded estimates to 0 subscription(s), 0 failed"
-        if self._dry_run:
-            return (
-                f"Dry-run estimates for {self._period} to "
-                f"{self._ok} subscription(s), {self._failed} failed"
-            )
+        verb = "Dry-run" if self._dry_run else "Uploaded"
+        period = f" for {self._period}" if self._ok or self._skipped or self._failed else ""
         return (
-            f"Uploaded estimates for {self._period} to "
-            f"{self._ok} subscription(s), {self._failed} failed"
+            f"{verb} estimates{period} to {self._ok} subscription(s), "
+            f"{self._skipped} skipped, {self._failed} failed"
         )
 
 
@@ -297,12 +301,14 @@ class EstimatesUploader:
         self,
         accumulations: SubscriptionAccumulationRepository,
         subscriptions: SubscriptionService,
+        subscription_listing: AsyncSubscriptionsService,
         max_concurrency: int = _DEFAULT_MAX_CONCURRENCY,
         *,
         dry_run: bool = False,
     ) -> None:
         self._producer = PriceEstimateProducer(_EstimateCalculator(accumulations))
         self._subscriptions = subscriptions
+        self._writable_filter = WritableSubscriptionFilter(subscription_listing)
         self._dry_run = dry_run
         self._semaphore = asyncio.Semaphore(max_concurrency)
 
@@ -330,6 +336,7 @@ class EstimatesUploader:
         tasks, and uploads stay bounded by ``max_concurrency`` regardless of the id count.
         ``purchase_currencies`` (see ``charged_currencies``) arms the currency guard: an
         estimate is refused when its charges in this run were priced in more than one currency.
+        Only Active or Suspended subscriptions are uploaded; the rest are reported as skipped.
         """
         logger.info(
             "Uploading estimates for period %d-%02d%s",
@@ -343,13 +350,38 @@ class EstimatesUploader:
         )
         async with asyncio.TaskGroup() as group:
             async for subscription_id, estimate in self._producer.produce(
-                subscription_ids, year, month
+                self._writable_ids(subscription_ids, report), year, month
             ):
                 await self._semaphore.acquire()
                 group.create_task(  # type: ignore[unused-awaitable]  # owned by the group
                     self._record(consumer, report, subscription_id, estimate)
                 )
         return report
+
+    async def _writable_ids(
+        self,
+        subscription_ids: AsyncIterable[str] | Iterable[str],
+        report: EstimateUploadReport,
+    ) -> AsyncIterator[str]:
+        """Yield the ids whose subscription is Active or Suspended.
+
+        Every other id is recorded on the report as skipped. An id whose status could not be
+        read is recorded as failed rather than uploaded blind.
+        """
+        async for check in self._writable_filter.check(subscription_ids):
+            if check.writable:
+                yield check.subscription_id
+            elif check.error is None:
+                report.record(UploadOutcome(check.subscription_id, skipped=True))
+            else:
+                report.record(
+                    UploadOutcome(
+                        check.subscription_id,
+                        failed=True,
+                        exception=check.error,
+                        error=str(check.error),
+                    )
+                )
 
     async def _record(
         self,

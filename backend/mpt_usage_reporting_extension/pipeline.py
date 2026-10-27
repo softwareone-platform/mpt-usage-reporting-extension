@@ -242,6 +242,7 @@ class UsageReportingPipeline:  # noqa: WPS214
         report: EstimateUploadReport = await EstimatesUploader(
             subscription_repo,
             api_service.subscriptions,
+            api_service.client.commerce.subscriptions,
             dry_run=dry_run,
         ).update(
             updatable_subscription_ids(accumulations),

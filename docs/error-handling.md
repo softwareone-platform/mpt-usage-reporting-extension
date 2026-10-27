@@ -129,8 +129,13 @@ Estimate uploads must not let one subscription's failure abort the rest.
 boundary: a currency-guard refusal (`EstimateCurrencyError`) is logged once at
 `ERROR` without a traceback, and an upload error once with `logger.exception`;
 both become a failed `UploadOutcome`. A refused estimate never reaches the
-`PUT`. The run report logs each
-subscription as `OK`/`FAILED`, the execution finishes as
+`PUT`. Before any estimate is computed, `WritableSubscriptionFilter`
+(`services/subscription_status.py`) lists the subscriptions' statuses; when
+that listing fails, it is logged once with `logger.exception` and every
+subscription in the affected chunk becomes a failed `UploadOutcome` instead of
+being uploaded without a status check. A subscription that is not `Active` or
+`Suspended` is a skipped outcome, not a failure. The run report logs each
+subscription as `OK`/`SKIPPED`/`FAILED`; when any failed, the execution finishes as
 `completed_with_errors`, and the command exits non-zero. Both the failure and
 the report line reach the run's log, because the CLI configures the SDK's
 logging before every command (`observability.py`); see
